@@ -9,6 +9,9 @@ Dependency Injection container for the Zana framework.
 - **`ServiceScope`** — scoped service lifetime management
 - **`ConstructorResolver`** / **`ParameterResolver`** — automatic constructor and method parameter resolution
 - **`CircularDependencyException`** / **`ContainerException`** / **`NotFoundException`** / **`ResolutionException`** — typed error handling
+- **`ScopeMetadata`** (in `Zana\Container\Scopes`) — concrete scope metadata implementing the complete `ScopeMetadataInterface` from `zana/contracts`
+- **Scope contracts** — `ScopeMetadataInterface`, `ScopeType`, `DisposableInterface`, `ServiceLifetime` all live in `zana/contracts` (`Zana\Contracts\Container`) so other packages can consume them without depending on `zana/container`
+- **`ServiceDescriptor`** (in `Zana\Container\Descriptors`) — container-internal value object describing a service registration. It is **not** a framework contract; no `Zana\Contracts\*` type references it, so it stays in the container package (see the decisive-test rule in `docs/PACKAGES.md`).
 
 ## Install
 
@@ -39,4 +42,3 @@ vendor/bin/phpunit packages/container/tests
 ## License
 
 MIT — see [LICENSE](LICENSE).
-

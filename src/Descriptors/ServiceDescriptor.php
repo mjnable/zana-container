@@ -2,13 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Zana\Container;
+namespace Zana\Container\Descriptors;
+
+use Zana\Contracts\Container\ServiceLifetime;
 
 /**
  * Immutable metadata representing a service registration.
  *
- * Acts as the contract between ServiceCollection (registration)
- * and ServiceProvider (resolution).
+ * Acts as the internal contract between ServiceCollection (registration)
+ * and ServiceProvider (resolution). This is an implementation-level value
+ * object, so it stays in the container package rather than in zana/contracts.
  *
  * Only one creation strategy is active at a time:
  * - implementation (class name)
@@ -33,6 +36,24 @@ final readonly class ServiceDescriptor
         public ?object $instance = null,
         public array $metadata = [],
     ) {
+        $strategies = 0;
+        if ($implementation !== null) {
+            $strategies++;
+        }
+        if ($factory !== null) {
+            $strategies++;
+        }
+        if ($instance !== null) {
+            $strategies++;
+        }
+
+        if ($strategies > 1) {
+            throw new \InvalidArgumentException(
+                'Only one creation strategy is active at a time: '
+                . 'implementation, factory, or instance. '
+                . 'Received ' . $strategies . ' strategies.'
+            );
+        }
     }
 
     /**
@@ -82,4 +103,3 @@ final readonly class ServiceDescriptor
         return $this->service;
     }
 }
-

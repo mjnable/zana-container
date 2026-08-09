@@ -8,10 +8,10 @@ use PHPUnit\Framework\TestCase;
 use Zana\Container\ServiceCollection;
 use Zana\Container\ServiceProvider;
 use Zana\Container\Scopes\ServiceScope;
-use Zana\Container\Contracts\ServiceScopeInterface;
-use Zana\Container\Contracts\ScopeMetadata;
-use Zana\Container\Contracts\ScopeType;
-use Zana\Container\Contracts\Disposable;
+use Zana\Contracts\Container\ServiceScopeInterface;
+use Zana\Contracts\Container\ScopeType;
+use Zana\Contracts\Container\DisposableInterface;
+use Zana\Container\Scopes\ScopeMetadata;
 
 class ServiceScopeTest extends TestCase
 {
@@ -78,13 +78,13 @@ class ServiceScopeTest extends TestCase
         $metadata = ScopeMetadata::http();
         $scope = $this->provider->createScope($metadata);
         $this->assertSame($metadata, $scope->getMetadata());
-        $this->assertNotNull($scope->getMetadata()?->id);
-        $this->assertEquals(ScopeType::Http, $scope->getMetadata()?->type);
+        $this->assertNotNull($scope->getMetadata()?->id());
+        $this->assertEquals(ScopeType::Http, $scope->getMetadata()?->type());
     }
 
     public function testScopeDisposesDisposableServices(): void
     {
-        $disposableService = new class() implements Disposable {
+        $disposableService = new class() implements DisposableInterface {
             public bool $disposed = false;
             public function dispose(): void
             {
@@ -134,4 +134,3 @@ class ServiceScopeTest extends TestCase
         $this->assertFalse($scope->has('non-existent-service'));
     }
 }
-

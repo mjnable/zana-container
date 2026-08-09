@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Zana\Container;
 
-use Zana\Container\Contracts\ServiceCollectionInterface;
-use Zana\Container\Contracts\ContainerInterface;
+use Zana\Contracts\Container\ServiceCollectionInterface;
+use Zana\Contracts\Container\ContainerInterface;
+use Zana\Contracts\Container\ServiceLifetime;
+use Zana\Container\Descriptors\ServiceDescriptor;
 
 class ServiceCollection implements ServiceCollectionInterface
 {
@@ -51,7 +53,6 @@ class ServiceCollection implements ServiceCollectionInterface
         $this->descriptors[$service] = [
             new ServiceDescriptor(
                 service: $service,
-                implementation: $instance::class,
                 lifetime: ServiceLifetime::Singleton,
                 instance: $instance
             )
@@ -129,4 +130,3 @@ class ServiceCollection implements ServiceCollectionInterface
         return $this->aliases;
     }
 }
-

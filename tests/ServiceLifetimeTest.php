@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Zana\Container\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Zana\Container\ServiceLifetime;
+use Zana\Contracts\Container\ServiceLifetime;
 
 class ServiceLifetimeTest extends TestCase
 {
@@ -36,4 +36,3 @@ class ServiceLifetimeTest extends TestCase
         $this->assertContains('Transient', $names);
     }
 }
-

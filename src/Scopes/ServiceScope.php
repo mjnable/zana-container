@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace Zana\Container\Scopes;
 
 use Zana\Container\ServiceProvider;
-use Zana\Container\Contracts\ServiceScopeInterface;
-use Zana\Container\Contracts\ScopeMetadata;
+use Zana\Contracts\Container\ServiceScopeInterface;
+use Zana\Contracts\Container\ScopeMetadataInterface;
+use Zana\Contracts\Container\DisposableInterface;
 
 /**
  * Represents an execution scope for scoped service resolution.
@@ -28,11 +29,11 @@ class ServiceScope implements ServiceScopeInterface
 
     /**
      * @param ServiceProvider $provider The service provider that created this scope
-     * @param ScopeMetadata|null $metadata Optional metadata for this scope
+     * @param ScopeMetadataInterface|null $metadata Optional metadata for this scope
      */
     public function __construct(
         private readonly ServiceProvider $provider,
-        private readonly ?ScopeMetadata $metadata = null,
+        private readonly ?ScopeMetadataInterface $metadata = null,
     ) {
     }
 
@@ -47,7 +48,7 @@ class ServiceScope implements ServiceScopeInterface
     /**
      * Get the scope metadata.
      */
-    public function getMetadata(): ?ScopeMetadata
+    public function getMetadata(): ?ScopeMetadataInterface
     {
         return $this->metadata;
     }
@@ -68,7 +69,7 @@ class ServiceScope implements ServiceScopeInterface
         $this->parent = $parent;
 
         if ($parent !== null) {
-            $id = $this->metadata?->id ?? spl_object_id($this);
+            $id = $this->metadata?->id() ?? spl_object_id($this);
             $parent->children[(string) $id] = $this;
         }
     }
@@ -76,7 +77,7 @@ class ServiceScope implements ServiceScopeInterface
     /**
      * Create a child scope nested within this scope.
      */
-    public function createChild(?ScopeMetadata $metadata = null): self
+    public function createChild(?ScopeMetadataInterface $metadata = null): self
     {
         $child = new self($this->provider, $metadata);
         $child->setParent($this);
@@ -133,9 +134,9 @@ class ServiceScope implements ServiceScopeInterface
         }
         $this->children = [];
 
-        // Dispose scoped services that implement Disposable
+        // Dispose scoped services that implement DisposableInterface
         foreach ($this->scopedCache as $service => $instance) {
-            if ($instance instanceof \Zana\Container\Contracts\Disposable) {
+            if ($instance instanceof DisposableInterface) {
                 $instance->dispose();
             }
         }
@@ -143,7 +144,7 @@ class ServiceScope implements ServiceScopeInterface
 
         // Remove from parent
         if ($this->parent !== null) {
-            $id = $this->metadata?->id ?? spl_object_id($this);
+            $id = $this->metadata?->id() ?? spl_object_id($this);
             unset($this->parent->children[(string) $id]);
         }
 
@@ -189,4 +190,3 @@ class ServiceScope implements ServiceScopeInterface
         }
     }
 }
-

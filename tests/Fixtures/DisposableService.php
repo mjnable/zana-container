@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Zana\Container\Tests\Fixtures;
 
-use Zana\Container\Contracts\Disposable;
+use Zana\Contracts\Container\DisposableInterface;
 
-class DisposableService implements Disposable
+class DisposableService implements DisposableInterface
 {
     public bool $disposed = false;
 
@@ -15,4 +15,3 @@ class DisposableService implements Disposable
         $this->disposed = true;
     }
 }
-

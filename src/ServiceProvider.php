@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Zana\Container;
 
 use Psr\Container\ContainerInterface as PsrContainerInterface;
-use Zana\Container\Contracts\ContainerInterface;
-use Zana\Container\Contracts\ServiceProviderInterface;
-use Zana\Container\Contracts\ServiceScopeInterface;
-use Zana\Container\Contracts\ScopeMetadata;
+use Zana\Contracts\Container\ContainerInterface;
+use Zana\Contracts\Container\ServiceProviderInterface;
+use Zana\Contracts\Container\ServiceScopeInterface;
+use Zana\Contracts\Container\ScopeMetadataInterface;
+use Zana\Contracts\Container\ServiceLifetime;
+use Zana\Container\Descriptors\ServiceDescriptor;
 use Zana\Container\Scopes\ServiceScope;
 use Zana\Container\Exception\NotFoundException;
 use Zana\Container\Exception\ResolutionException;
@@ -125,7 +127,7 @@ class ServiceProvider implements ContainerInterface, ServiceProviderInterface
         return $results;
     }
 
-    public function createScope(?ScopeMetadata $metadata = null): ServiceScopeInterface
+    public function createScope(?ScopeMetadataInterface $metadata = null): ServiceScopeInterface
     {
         $scope = new ServiceScope($this, $metadata);
         return $scope;
@@ -363,4 +365,3 @@ class ServiceProvider implements ContainerInterface, ServiceProviderInterface
         );
     }
 }
-

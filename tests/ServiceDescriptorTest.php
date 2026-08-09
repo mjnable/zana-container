@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Zana\Container\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Zana\Container\ServiceDescriptor;
-use Zana\Container\ServiceLifetime;
+use Zana\Container\Descriptors\ServiceDescriptor;
+use Zana\Contracts\Container\ServiceLifetime;
 
 class ServiceDescriptorTest extends TestCase
 {
@@ -107,5 +107,104 @@ class ServiceDescriptorTest extends TestCase
 
         $this->assertEquals(ServiceLifetime::Transient, $descriptor->lifetime);
     }
-}
 
+    public function testValidSelfRegistrationStrategy(): void
+    {
+        $descriptor = new ServiceDescriptor(
+            service: \stdClass::class,
+        );
+
+        $this->assertTrue($descriptor->isSelfRegistered());
+        $this->assertFalse($descriptor->isFactory());
+        $this->assertFalse($descriptor->isInstance());
+        $this->assertFalse($descriptor->hasImplementation());
+    }
+
+    public function testValidImplementationStrategy(): void
+    {
+        $descriptor = new ServiceDescriptor(
+            service: 'service',
+            implementation: \stdClass::class,
+        );
+
+        $this->assertTrue($descriptor->hasImplementation());
+        $this->assertFalse($descriptor->isFactory());
+        $this->assertFalse($descriptor->isInstance());
+        $this->assertFalse($descriptor->isSelfRegistered());
+    }
+
+    public function testValidFactoryStrategy(): void
+    {
+        $descriptor = new ServiceDescriptor(
+            service: \stdClass::class,
+            factory: fn () => new \stdClass(),
+        );
+
+        $this->assertTrue($descriptor->isFactory());
+        $this->assertFalse($descriptor->isInstance());
+        $this->assertFalse($descriptor->hasImplementation());
+        $this->assertFalse($descriptor->isSelfRegistered());
+    }
+
+    public function testValidInstanceStrategy(): void
+    {
+        $descriptor = new ServiceDescriptor(
+            service: \stdClass::class,
+            instance: new \stdClass(),
+        );
+
+        $this->assertTrue($descriptor->isInstance());
+        $this->assertFalse($descriptor->isFactory());
+        $this->assertFalse($descriptor->hasImplementation());
+        $this->assertFalse($descriptor->isSelfRegistered());
+    }
+
+    public function testInvalidImplementationAndFactoryThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Only one creation strategy is active at a time');
+
+        new ServiceDescriptor(
+            service: \stdClass::class,
+            implementation: \stdClass::class,
+            factory: fn () => new \stdClass(),
+        );
+    }
+
+    public function testInvalidImplementationAndInstanceThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Only one creation strategy is active at a time');
+
+        new ServiceDescriptor(
+            service: \stdClass::class,
+            implementation: \stdClass::class,
+            instance: new \stdClass(),
+        );
+    }
+
+    public function testInvalidFactoryAndInstanceThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Only one creation strategy is active at a time');
+
+        new ServiceDescriptor(
+            service: \stdClass::class,
+            factory: fn () => new \stdClass(),
+            instance: new \stdClass(),
+        );
+    }
+
+    public function testInvalidAllThreeStrategiesThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Only one creation strategy is active at a time');
+
+        new ServiceDescriptor(
+            service: \stdClass::class,
+            implementation: \stdClass::class,
+            factory: fn () => new \stdClass(),
+            instance: new \stdClass(),
+        );
+    }
+}
