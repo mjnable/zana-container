@@ -5,17 +5,15 @@ declare(strict_types=1);
 namespace Zana\Container\Exception;
 
 /**
- * Thrown when a circular dependency is detected during resolution.
+ * Thrown when resolution re-enters a service that is already being resolved.
  */
 class CircularDependencyException extends ContainerException
 {
-    public static function detected(string $service, array $chain): self
+    /**
+     * @param list<string> $cycle Services in the cycle, ending with the re-entered one
+     */
+    public static function forCycle(array $cycle): self
     {
-        $chainStr = implode(' → ', array_reverse($chain));
-        return new self(
-            "Circular dependency detected for: {$service}\n" .
-            "Dependency chain: {$chainStr} → {$service}"
-        );
+        return new self('Circular dependency detected: ' . implode(' → ', $cycle) . '.');
     }
 }
-

@@ -5,31 +5,36 @@ declare(strict_types=1);
 namespace Zana\Container\Exception;
 
 /**
- * Thrown when a service cannot be resolved due to configuration or dependency issues.
+ * Thrown when creating a service fails: a constructor, factory or decorator
+ * throws, or a factory returns the wrong type.
  */
 class ResolutionException extends ContainerException
 {
-    public static function unresolvedDependency(
-        string $service,
-        string $parameter,
-        string $type,
-        ?string $chain = null
-    ): self {
-        $message = sprintf(
-            "Unable to resolve constructor parameter '%s' of type '%s' for service '%s'.",
-            $parameter,
-            $type,
-            $service
+    /**
+     * @param list<string> $chain
+     */
+    public static function creationFailed(string $service, array $chain, \Throwable $previous): self
+    {
+        return new self(
+            sprintf(
+                'Unable to resolve %s: %s threw "%s".',
+                $service,
+                get_debug_type($previous),
+                $previous->getMessage()
+            ) . self::formatChain($chain),
+            0,
+            $previous
         );
-        if ($chain !== null) {
-            $message .= "\nDependency chain:\n{$chain}";
-        }
-        $message .= "\n\nPossible solutions:";
-        $message .= "\n- Register a binding for '{$type}'";
-        $message .= "\n- Use a factory to create '{$service}' manually";
-        $message .= "\n- Make the parameter optional (nullable or default value)";
+    }
 
-        return new self($message);
+    /**
+     * @param list<string> $chain
+     */
+    public static function invalidResult(string $producer, string $service, mixed $result, array $chain): self
+    {
+        return new self(
+            sprintf('%s must return an instance of %s; got %s.', $producer, $service, get_debug_type($result))
+            . self::formatChain($chain)
+        );
     }
 }
-

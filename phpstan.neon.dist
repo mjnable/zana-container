@@ -1,0 +1,10 @@
+parameters:
+    level: 8
+    paths:
+        - src
+        - tests
+    ignoreErrors:
+        # Untyped constructor parameters are deliberate: resolution of untyped parameters is under test.
+        -
+            identifier: missingType.parameter
+            path: tests/Fixtures/services.php

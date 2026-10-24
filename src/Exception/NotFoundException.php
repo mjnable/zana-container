@@ -7,17 +7,17 @@ namespace Zana\Container\Exception;
 use Psr\Container\NotFoundExceptionInterface;
 
 /**
- * Thrown when a service cannot be found or resolved.
+ * Thrown when a requested service is not registered.
  */
 class NotFoundException extends ContainerException implements NotFoundExceptionInterface
 {
-    public static function forService(string $service, ?string $chain = null): self
+    /**
+     * @param list<string> $chain
+     */
+    public static function forService(string $service, ?string $key = null, array $chain = []): self
     {
-        $message = "Service not found: {$service}";
-        if ($chain !== null) {
-            $message .= "\nResolution chain:\n{$chain}";
-        }
-        return new self($message);
+        $what = $key === null ? $service : "{$service} [key: {$key}]";
+
+        return new self("Service not registered: {$what}." . self::formatChain($chain));
     }
 }
-
