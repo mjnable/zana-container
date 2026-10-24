@@ -11,7 +11,7 @@ use Zana\Container\ServiceLifetime;
 
 /**
  * Validates a registry without creating any service (container specification
- * §10, rules B1 to B8) and builds the constructor plans used at runtime.
+ * §10, rules B1 to B11) and builds the plans used at runtime.
  *
  * Factory and instance registrations are opaque: their own dependencies are
  * only checked when they are resolved.
@@ -31,9 +31,12 @@ final class BuildValidator
     /** @var array<string, ConstructorPlan> */
     private array $decoratorPlans = [];
 
-    public function __construct(private readonly Registry $registry)
+    /**
+     * @param list<\Zana\Container\Contracts\ParameterValueProviderInterface> $providers
+     */
+    public function __construct(private readonly Registry $registry, array $providers)
     {
-        $this->planner = new PlanBuilder($registry);
+        $this->planner = new PlanBuilder($registry, $providers);
     }
 
     public function validate(): BuildResult
@@ -81,9 +84,9 @@ final class BuildValidator
             $this->error('B2', $descriptor, "{$class->getName()} does not implement or extend {$descriptor->service}");
         }
 
-        $plan = $this->plans[$class->getName()] ??= $this->planner->build($class);
-        foreach ($plan->problems as $problem) {
-            $this->error('B3', $descriptor, $problem);
+        $plan = $this->plans[$class->getName()] ??= $this->planner->forClass($class);
+        foreach ($plan->problems as [$code, $problem]) {
+            $this->error($code, $descriptor, $problem);
         }
     }
 
@@ -217,7 +220,7 @@ final class BuildValidator
             $this->error('B8', $anchor, "{$role}it does not implement or extend {$service}");
         }
 
-        $plan = $this->planner->build($class, $service);
+        $plan = $this->planner->forClass($class, $service);
         $this->decoratorPlans[BuildResult::decoratorKey($service, $decorator)] = $plan;
 
         if ($plan->innerParameters !== 1) {
@@ -229,8 +232,8 @@ final class BuildValidator
             ));
         }
 
-        foreach ($plan->problems as $problem) {
-            $this->error('B3', $anchor, $role . $problem);
+        foreach ($plan->problems as [$code, $problem]) {
+            $this->error($code, $anchor, $role . $problem);
         }
     }
 
@@ -346,12 +349,27 @@ final class BuildValidator
 
         $targets = [];
         foreach ($plans as $plan) {
-            foreach ($plan->dependencies() as [$source, $service]) {
-                $service = $this->registry->resolveAlias($service);
-                if ($source === ParameterSource::Variadic) {
-                    array_push($targets, ...$this->registry->all($service));
-                } elseif (($target = $this->registry->last($service)) !== null) {
-                    $targets[] = $target;
+            foreach ($plan->dependencies() as $dependency) {
+                $services = match ($dependency->source) {
+                    ParameterSource::Tagged => $this->registry->tagged((string) $dependency->tag),
+                    default => [(string) $dependency->service],
+                };
+
+                foreach ($services as $service) {
+                    if ($dependency->source === ParameterSource::Keyed) {
+                        $target = $this->registry->last($service, $dependency->key);
+                        if ($target !== null) {
+                            $targets[] = $target;
+                        }
+                        continue;
+                    }
+
+                    $service = $this->registry->resolveAlias($service);
+                    if ($dependency->source === ParameterSource::Variadic) {
+                        array_push($targets, ...$this->registry->all($service));
+                    } elseif (($target = $this->registry->last($service)) !== null) {
+                        $targets[] = $target;
+                    }
                 }
             }
         }

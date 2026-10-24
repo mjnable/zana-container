@@ -103,6 +103,13 @@ abstract class AbstractResolver implements ServiceResolverInterface
         );
     }
 
+    public function call(callable|array|string $callable, array $arguments = []): mixed
+    {
+        $this->assertUsable();
+
+        return $this->engine->call($callable, $arguments, $this);
+    }
+
     public function isDisposed(): bool
     {
         return $this->disposed;

@@ -66,6 +66,55 @@ interface ServiceCollectionInterface
      */
     public function decorate(string $service, string|Closure $decorator): static;
 
+    /**
+     * Call $register($this) now if the condition holds.
+     *
+     * @param bool|Closure(): bool $condition
+     * @param Closure(static): mixed $register
+     */
+    public function when(bool|Closure $condition, Closure $register): static;
+
+    /**
+     * Call $register($this) now if the profile is active.
+     *
+     * @param Closure(static): mixed $register
+     */
+    public function profile(string $profile, Closure $register): static;
+
+    /**
+     * @return list<string> Profiles given to the constructor
+     */
+    public function activeProfiles(): array;
+
+    /**
+     * Register classes from their #[Singleton], #[Scoped] or #[Transient] attribute.
+     *
+     * @param class-string ...$classes
+     * @throws \Zana\Container\Exception\ContainerException If a class has no lifetime attribute or several
+     */
+    public function addAttributed(string ...$classes): static;
+
+    /**
+     * Register every attributed class under a PSR-4 directory. Runs at build time;
+     * scanned registrations come before explicit ones, so explicit ones win.
+     */
+    public function scan(string $directory, string $namespace, ?string $origin = null): static;
+
+    public function addParameterProvider(ParameterValueProviderInterface $provider): static;
+
+    /** Declare that a capability is present. */
+    public function provide(string $capability, ?string $origin = null): static;
+
+    /** Declare that a capability is needed; the build fails (B14) if nobody provides it. */
+    public function requires(string $capability, ?string $origin = null): static;
+
+    /**
+     * Register more services at build time if the capability is provided.
+     *
+     * @param Closure(static): mixed $register
+     */
+    public function whenCapability(string $capability, Closure $register): static;
+
     public function has(string $service, ?string $key = null): bool;
 
     /**

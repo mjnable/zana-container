@@ -4,7 +4,17 @@ parameters:
         - src
         - tests
     ignoreErrors:
-        # Untyped constructor parameters are deliberate: resolution of untyped parameters is under test.
+        # Fixtures exercise untyped parameters and properties on purpose.
         -
             identifier: missingType.parameter
             path: tests/Fixtures/services.php
+        -
+            identifier: missingType.property
+            path: tests/Fixtures/attributes.php
+        # #[Inject] properties are written by the container through reflection.
+        -
+            identifier: property.onlyRead
+            path: tests/Fixtures/attributes.php
+        -
+            identifier: property.uninitializedReadonly
+            path: tests/Fixtures/attributes.php

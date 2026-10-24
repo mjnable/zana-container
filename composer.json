@@ -21,7 +21,7 @@
         "psr-4": {
             "Zana\\Container\\Tests\\": "tests/"
         },
-        "files": ["tests/Fixtures/services.php"]
+        "files": ["tests/Fixtures/services.php", "tests/Fixtures/attributes.php"]
     },
     "scripts": {
         "test": "phpunit",

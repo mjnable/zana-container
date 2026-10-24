@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Zana\Container\Internal;
 
 use Closure;
+use Zana\Container\Contracts\ParameterValueProviderInterface;
 use Zana\Container\Exception\CircularDependencyException;
 use Zana\Container\Exception\ContainerException;
 use Zana\Container\Exception\ResolutionException;
 use Zana\Container\Exception\ScopeException;
+use Zana\Container\ResolutionContext;
 use Zana\Container\ServiceDescriptor;
 use Zana\Container\ServiceLifetime;
 
@@ -16,8 +18,8 @@ use Zana\Container\ServiceLifetime;
  * Creates service instances for the root container and its scopes.
  *
  * Applies the lifetime and owning-resolver rules (specification §6.2, §8),
- * runs constructors and factories, applies decorators, and detects circular
- * resolution at runtime. Every resolver of one container shares one engine.
+ * runs constructors, factories and injection, applies decorators, and detects
+ * circular resolution at runtime. Every resolver of one container shares one engine.
  *
  * @internal
  */
@@ -29,16 +31,21 @@ final class Engine
     /** @var \WeakMap<object, list<int>> Fiber => indexes being resolved in that fiber */
     private \WeakMap $fiberStacks;
 
+    private readonly PlanBuilder $planner;
+
     /**
      * @param array<class-string, ConstructorPlan> $plans
      * @param array<string, ConstructorPlan> $decoratorPlans
+     * @param list<ParameterValueProviderInterface> $providers
      */
     public function __construct(
         private readonly Registry $registry,
         private readonly array $plans,
         private readonly array $decoratorPlans,
+        private readonly array $providers,
     ) {
         $this->fiberStacks = new \WeakMap();
+        $this->planner = new PlanBuilder($registry, $providers);
     }
 
     public function resolve(int $index, AbstractResolver $requester): object
@@ -58,6 +65,37 @@ final class Engine
         }
 
         return $owner->cached($index) ?? $owner->store($index, $this->create($index, $descriptor, $owner, track: true));
+    }
+
+    /**
+     * Invoke a callable with its parameters resolved from $resolver (specification §7.3).
+     *
+     * Exceptions thrown by the callable itself are not wrapped.
+     *
+     * @param callable|array<mixed>|string $callable
+     * @param array<array-key, mixed> $arguments Named overrides
+     */
+    public function call(callable|array|string $callable, array $arguments, AbstractResolver $resolver): mixed
+    {
+        foreach (array_keys($arguments) as $name) {
+            if (is_int($name)) {
+                throw new ContainerException('call() accepts named arguments only; got a positional argument at index ' . $name . '.');
+            }
+        }
+
+        [$function, $object, $label] = $this->reflectCallable($callable, $resolver);
+        [$plans, $problems] = $this->planner->forFunction($function, array_map('strval', array_keys($arguments)));
+
+        if ($problems !== []) {
+            $messages = array_map(static fn (array $problem): string => "[{$problem[0]}] {$problem[1]}", $problems);
+            throw new ResolutionException("Cannot call {$label}:\n  " . implode("\n  ", $messages) . $this->formattedChain());
+        }
+
+        $values = $this->arguments($plans, $resolver, null, null, $arguments);
+
+        return $function instanceof \ReflectionMethod
+            ? $function->invokeArgs($object, $values)
+            : $function->invokeArgs($values);
     }
 
     /**
@@ -129,7 +167,7 @@ final class Engine
             /** @var class-string $implementation */
             $implementation = $descriptor->implementation;
 
-            return $this->construct($this->plans[$implementation], $owner);
+            return $this->construct($this->plans[$implementation], $owner, $descriptor);
         } catch (ContainerException $e) {
             throw $e;
         } catch (\Throwable $e) {
@@ -147,7 +185,7 @@ final class Engine
         try {
             $result = $decorator instanceof Closure
                 ? $decorator($inner, $owner)
-                : $this->construct($this->decoratorPlans[BuildResult::decoratorKey($descriptor->service, $decorator)], $owner, $inner);
+                : $this->construct($this->decoratorPlans[BuildResult::decoratorKey($descriptor->service, $decorator)], $owner, $descriptor, $inner);
         } catch (ContainerException $e) {
             throw $e;
         } catch (\Throwable $e) {
@@ -161,39 +199,146 @@ final class Engine
         return $result;
     }
 
-    private function construct(ConstructorPlan $plan, AbstractResolver $owner, ?object $inner = null): object
+    private function construct(ConstructorPlan $plan, AbstractResolver $owner, ServiceDescriptor $descriptor, ?object $inner = null): object
     {
-        $positional = $plan->isPositional();
+        $class = $plan->class;
+        $object = new $class(...$this->arguments($plan->parameters, $owner, $descriptor, $inner));
+
+        foreach ($plan->properties as $property) {
+            if ($property->source === ParameterSource::Default) {
+                continue; // keep the declared default
+            }
+
+            /** @var \ReflectionProperty $target */
+            $target = $property->target;
+            $target->setValue($object, $this->value($property, $owner, $descriptor, $inner, []));
+        }
+
+        foreach ($plan->methods as $method) {
+            $method->method->invokeArgs($object, $this->arguments($method->parameters, $owner, $descriptor, $inner));
+        }
+
+        return $object;
+    }
+
+    /**
+     * @param list<ParameterPlan> $plans
+     * @param array<array-key, mixed> $overrides
+     * @return array<array-key, mixed>
+     */
+    private function arguments(array $plans, AbstractResolver $owner, ?ServiceDescriptor $descriptor, ?object $inner, array $overrides = []): array
+    {
+        $positional = ParameterPlan::needPositional($plans);
         $arguments = [];
 
-        foreach ($plan->parameters as $parameter) {
-            if ($parameter->source === ParameterSource::Variadic) {
-                array_push($arguments, ...$owner->getAll((string) $parameter->service));
+        foreach ($plans as $plan) {
+            if ($plan->source === ParameterSource::Variadic) {
+                array_push($arguments, ...$owner->getAll((string) $plan->service));
                 continue;
             }
 
-            if ($parameter->source === ParameterSource::Default && !$positional) {
+            if ($plan->source === ParameterSource::Default && !$positional) {
                 continue; // named arguments let PHP evaluate the default itself
             }
 
-            $value = match ($parameter->source) {
-                ParameterSource::Resolver => $owner,
-                ParameterSource::Service => $owner->get((string) $parameter->service),
-                ParameterSource::Inner => $inner,
-                ParameterSource::Null => null,
-                ParameterSource::Default => $parameter->parameter->getDefaultValue(),
-            };
-
+            $value = $this->value($plan, $owner, $descriptor, $inner, $overrides);
             if ($positional) {
                 $arguments[] = $value;
             } else {
-                $arguments[$parameter->parameter->getName()] = $value;
+                $arguments[$plan->name()] = $value;
             }
         }
 
-        $class = $plan->class;
+        return $arguments;
+    }
 
-        return new $class(...$arguments);
+    /**
+     * @param array<array-key, mixed> $overrides
+     */
+    private function value(ParameterPlan $plan, AbstractResolver $owner, ?ServiceDescriptor $descriptor, ?object $inner, array $overrides): mixed
+    {
+        return match ($plan->source) {
+            ParameterSource::Resolver => $owner,
+            ParameterSource::Service => $owner->get((string) $plan->service),
+            ParameterSource::Keyed => $owner->getKeyed((string) $plan->service, (string) $plan->key),
+            ParameterSource::Tagged => $owner->tagged((string) $plan->tag),
+            ParameterSource::Provider => $this->provided($plan, $descriptor),
+            ParameterSource::Inner => $inner,
+            ParameterSource::Override => $overrides[$plan->name()],
+            ParameterSource::Null => null,
+            ParameterSource::Default => $plan->target->getDefaultValue(),
+            ParameterSource::Variadic => throw new \LogicException('Variadic parameters are spread by arguments().'),
+        };
+    }
+
+    /**
+     * A provider's value; int or string values for a backed-enum target become the enum case.
+     */
+    private function provided(ParameterPlan $plan, ?ServiceDescriptor $descriptor): mixed
+    {
+        $provider = $this->providers[(int) $plan->provider];
+        $value = $provider->provide($plan->target, new ResolutionContext($descriptor, $this->chain()));
+
+        $type = $plan->target->getType();
+        if ((is_int($value) || is_string($value))
+            && $type instanceof \ReflectionNamedType
+            && is_subclass_of($type->getName(), \BackedEnum::class)
+        ) {
+            /** @var class-string<\BackedEnum> $enum */
+            $enum = $type->getName();
+
+            return $enum::from($value);
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param callable|array<mixed>|string $callable
+     * @return array{\ReflectionFunction|\ReflectionMethod, ?object, string}
+     */
+    private function reflectCallable(callable|array|string $callable, AbstractResolver $resolver): array
+    {
+        if ($callable instanceof Closure) {
+            return [new \ReflectionFunction($callable), null, 'a closure'];
+        }
+
+        if (is_object($callable)) {
+            return [new \ReflectionMethod($callable, '__invoke'), $callable, get_class($callable) . '::__invoke()'];
+        }
+
+        if (is_string($callable)) {
+            if (!str_contains($callable, '::')) {
+                return [new \ReflectionFunction($callable), null, "{$callable}()"];
+            }
+            $callable = explode('::', $callable, 2);
+        }
+
+        if (!is_array($callable)) {
+            throw new ContainerException('call() expects a closure, an invokable object, "Class::method", [object, method] or [class, method].');
+        }
+
+        $target = $callable[0] ?? null;
+        $method = $callable[1] ?? null;
+        if (count($callable) !== 2 || !is_string($method) || (!is_object($target) && !is_string($target))) {
+            throw new ContainerException('call() expects a closure, an invokable object, "Class::method", [object, method] or [class, method].');
+        }
+        $reflection = new \ReflectionMethod($target, $method);
+        $class = is_object($target) ? get_class($target) : $target;
+        $label = "{$class}::{$method}()";
+
+        if (is_object($target)) {
+            return [$reflection, $reflection->isStatic() ? null : $target, $label];
+        }
+
+        if ($reflection->isStatic()) {
+            return [$reflection, null, $label];
+        }
+
+        $instance = $resolver->get($target);
+        assert(is_object($instance));
+
+        return [$reflection, $instance, $label];
     }
 
     private function satisfies(object $instance, string $service): bool
@@ -203,6 +348,13 @@ final class Engine
         }
 
         return $instance instanceof $service;
+    }
+
+    private function formattedChain(): string
+    {
+        $chain = $this->chain();
+
+        return $chain === [] ? '' : "\nResolution chain:\n  " . implode("\n  → ", $chain);
     }
 
     /**

@@ -85,6 +85,73 @@ $container->getAll(NotifierInterface::class);
 $container->tagged('notifiers');
 ```
 
+## Attributes and scanning
+
+```php
+#[Singleton(service: LoggerInterface::class, tags: ['loggers'])]
+#[Profile('production')]
+final class FileLogger implements LoggerInterface { /* ... */ }
+
+$services = new ServiceCollection(activeProfiles: ['production']);
+$services->addAttributed(FileLogger::class);                    // one class
+$services->scan(__DIR__ . '/src/Services', 'App\\Services', origin: 'module:App'); // a PSR-4 directory
+```
+
+Scanning only registers classes that carry `#[Singleton]`, `#[Scoped]` or
+`#[Transient]`. Scanned registrations come before explicit ones, so an explicit
+registration of the same service wins.
+
+`when($condition, fn ($services) => ...)` and `profile('testing', fn ($services) => ...)`
+register services conditionally.
+
+## Injection attributes and values
+
+```php
+final class ReportService
+{
+    #[Inject] private Clock $clock;                               // property injection
+
+    public function __construct(
+        #[Inject(key: 'redis')] private CacheInterface $cache,     // a keyed registration
+        #[Tagged('exporters')] private iterable $exporters,        // every member of a tag
+        #[Env('REPORT_TIMEOUT')] private int $timeout = 30,        // an environment variable
+    ) {}
+
+    #[Inject]
+    public function useLogger(LoggerInterface $logger): void {}   // method injection
+}
+
+$services->addParameterProvider(new EnvValueProvider());
+```
+
+Values for `#[Env]` come from `EnvValueProvider`, which converts them to `int`,
+`float`, `bool`, `string` or a backed enum. Other packages add their own value
+attributes, such as `#[Config]`, by implementing `ParameterValueProviderInterface`.
+
+A union, intersection or DNF parameter resolves when exactly one registered
+service satisfies it. If several do, the build fails (B10); pick one with `#[Inject]`.
+
+`call()` invokes a callable with its parameters resolved:
+
+```php
+$container->call([ReportController::class, 'show'], ['id' => 7]);
+```
+
+## Capabilities
+
+Packages declare features they provide. Others can require them, or register
+extra services only when they're present:
+
+```php
+$services->provide('reporting', origin: 'package:mj-zana/reporting');
+$services->requires('reporting', origin: 'module:Finance');           // build fails (B14) if missing
+$services->whenCapability('reporting', fn ($s) => $s->tag('routes', ReportRoutes::class));
+
+$container->get(CapabilitiesInterface::class)->has('reporting');
+```
+
+A capability is presence metadata only; it never resolves to an object.
+
 ## Build validation
 
 `build()` reports every problem at once in a `ContainerBuildException`, whose
@@ -100,6 +167,11 @@ $container->tagged('notifiers');
 | B6 | aliases point to registered services, without cycles |
 | B7 | tagged services are registered |
 | B8 | decorated services exist and class decorators are valid |
+| B9 | `#[Inject]` targets are registered |
+| B10 | union and intersection types are not ambiguous |
+| B11 | attributes are used correctly, and value attributes have a provider |
+| B13 | scan directories exist and their files declare the expected classes |
+| B14 | required capabilities are provided |
 
 **Limitation:** factory and instance registrations are opaque to B3–B5. Their
 dependencies are only checked when they are resolved.
@@ -126,8 +198,8 @@ composer analyse    # PHPStan level 8
 ```
 
 The specification lives in the Zana design docs (`packages/container.md`).
-Attributes, scanning, capabilities, nested scopes, interceptors, lazy services,
-the service graph and compilation are planned for later M3 steps.
+Nested scopes, interceptors, lazy services, the service graph and compilation
+are planned for later M3 steps.
 
 ## License
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Zana\Container\Internal;
 
 /**
- * Where a constructor argument comes from (container specification §6.2).
+ * Where an argument or injected property value comes from (specification §6.2).
  *
  * @internal
  */
@@ -17,15 +17,27 @@ enum ParameterSource
     /** get() of a registered service. */
     case Service;
 
+    /** getKeyed() of a keyed registration (#[Inject] with a key). */
+    case Keyed;
+
+    /** tagged() of a tag (#[Tagged]). */
+    case Tagged;
+
+    /** A parameter value provider (#[Env], #[Config], ...). */
+    case Provider;
+
     /** getAll() spread into a variadic parameter. */
     case Variadic;
 
     /** The instance being decorated (decorator constructors only). */
     case Inner;
 
-    /** The parameter's declared default value. */
+    /** A named argument passed to call(). */
+    case Override;
+
+    /** The declared default value (properties keep theirs untouched). */
     case Default;
 
-    /** null, for a nullable parameter. */
+    /** null, for a nullable parameter or property. */
     case Null;
 }

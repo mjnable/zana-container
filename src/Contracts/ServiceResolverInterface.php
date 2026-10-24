@@ -49,6 +49,20 @@ interface ServiceResolverInterface extends PsrContainerInterface
     public function tagged(string $tag): array;
 
     /**
+     * Invoke a callable with its parameters resolved from this resolver.
+     *
+     * Accepts a closure, an invokable object, "Class::method" (static),
+     * [object, method], or [class, method] where the class is a registered service.
+     * Named $arguments take precedence over resolution; positional ones are rejected.
+     * Exceptions thrown by the callable itself propagate unchanged.
+     *
+     * @param callable|array{object|string, string}|string $callable
+     * @param array<string, mixed> $arguments
+     * @throws \Zana\Container\Exception\ContainerException If a parameter cannot be resolved
+     */
+    public function call(callable|array|string $callable, array $arguments = []): mixed;
+
+    /**
      * Dispose the services this resolver owns. Idempotent.
      */
     public function dispose(): void;
