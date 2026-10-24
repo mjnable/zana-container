@@ -26,6 +26,9 @@ enum ParameterSource
     /** A parameter value provider (#[Env], #[Config], ...). */
     case Provider;
 
+    /** The owning resolver's ScopeMetadata. */
+    case Metadata;
+
     /** getAll() spread into a variadic parameter. */
     case Variadic;
 

@@ -6,11 +6,15 @@ namespace Zana\Container\Internal;
 
 use Closure;
 use Zana\Container\Contracts\ParameterValueProviderInterface;
+use Zana\Container\Contracts\ResolutionInterceptorInterface;
+use Zana\Container\Contracts\ScopeInterface;
+use Zana\Container\Contracts\ScopeObserverInterface;
 use Zana\Container\Exception\CircularDependencyException;
 use Zana\Container\Exception\ContainerException;
 use Zana\Container\Exception\ResolutionException;
 use Zana\Container\Exception\ScopeException;
 use Zana\Container\ResolutionContext;
+use Zana\Container\ScopeMetadata;
 use Zana\Container\ServiceDescriptor;
 use Zana\Container\ServiceLifetime;
 
@@ -37,15 +41,60 @@ final class Engine
      * @param array<class-string, ConstructorPlan> $plans
      * @param array<string, ConstructorPlan> $decoratorPlans
      * @param list<ParameterValueProviderInterface> $providers
+     * @param list<ResolutionInterceptorInterface> $interceptors First is outermost
+     * @param list<ScopeObserverInterface> $observers
      */
     public function __construct(
         private readonly Registry $registry,
         private readonly array $plans,
         private readonly array $decoratorPlans,
         private readonly array $providers,
+        private readonly array $interceptors = [],
+        private readonly array $observers = [],
     ) {
         $this->fiberStacks = new \WeakMap();
         $this->planner = new PlanBuilder($registry, $providers);
+    }
+
+    public function scopeCreated(ScopeInterface $scope): void
+    {
+        foreach ($this->observers as $observer) {
+            $observer->scopeCreated($scope);
+        }
+    }
+
+    /**
+     * @return list<\Throwable>
+     */
+    public function scopeDisposing(ScopeInterface $scope): array
+    {
+        $errors = [];
+        foreach ($this->observers as $observer) {
+            try {
+                $observer->scopeDisposing($scope);
+            } catch (\Throwable $e) {
+                $errors[] = $e;
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * @return list<\Throwable>
+     */
+    public function scopeDisposed(ScopeMetadata $metadata): array
+    {
+        $errors = [];
+        foreach ($this->observers as $observer) {
+            try {
+                $observer->scopeDisposed($metadata);
+            } catch (\Throwable $e) {
+                $errors[] = $e;
+            }
+        }
+
+        return $errors;
     }
 
     public function resolve(int $index, AbstractResolver $requester): object
@@ -128,7 +177,9 @@ final class Engine
             if ($descriptor->instance !== null) {
                 $instance = $descriptor->instance;
             } else {
-                $instance = $this->activate($descriptor, $owner);
+                $instance = $descriptor->lazy
+                    ? $this->lazyProxy($index, $descriptor, $owner)
+                    : $this->activate($descriptor, $owner);
                 if ($track) {
                     $owner->track($instance);
                 }
@@ -147,7 +198,64 @@ final class Engine
         }
     }
 
+    /**
+     * A proxy that runs the full creation pipeline on first use (specification §9.2).
+     */
+    private function lazyProxy(int $index, ServiceDescriptor $descriptor, AbstractResolver $owner): object
+    {
+        /** @var class-string $implementation */
+        $implementation = $descriptor->implementation;
+
+        return Lazy::proxy($implementation, function () use ($index, $descriptor, $owner): object {
+            $stack = $this->stack();
+            if (in_array($index, $stack, true)) {
+                $cycle = array_map(fn (int $i): string => Label::of($this->registry->descriptor($i)), [...$stack, $index]);
+                throw CircularDependencyException::forCycle($cycle);
+            }
+
+            $this->push($index);
+            try {
+                return $this->activate($descriptor, $owner);
+            } finally {
+                $this->pop();
+            }
+        });
+    }
+
+    /**
+     * Create through the interceptors, outermost first (specification §9.1).
+     */
     private function activate(ServiceDescriptor $descriptor, AbstractResolver $owner): object
+    {
+        $create = fn (): object => $this->instantiate($descriptor, $owner);
+
+        foreach (array_reverse($this->interceptors) as $interceptor) {
+            $next = $create;
+            $create = function () use ($interceptor, $next, $descriptor, $owner): object {
+                $result = $interceptor->intercept($this->context($descriptor, $owner), $next);
+                if (!$this->satisfies($result, $descriptor->service)) {
+                    throw ResolutionException::invalidResult(
+                        'Interceptor ' . get_class($interceptor) . ' for ' . Label::of($descriptor),
+                        $descriptor->service,
+                        $result,
+                        $this->chain()
+                    );
+                }
+
+                return $result;
+            };
+        }
+
+        try {
+            return $create();
+        } catch (ContainerException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            throw ResolutionException::creationFailed(Label::of($descriptor), $this->chain(), $e);
+        }
+    }
+
+    private function instantiate(ServiceDescriptor $descriptor, AbstractResolver $owner): object
     {
         try {
             if ($descriptor->factory !== null) {
@@ -262,7 +370,8 @@ final class Engine
             ParameterSource::Service => $owner->get((string) $plan->service),
             ParameterSource::Keyed => $owner->getKeyed((string) $plan->service, (string) $plan->key),
             ParameterSource::Tagged => $owner->tagged((string) $plan->tag),
-            ParameterSource::Provider => $this->provided($plan, $descriptor),
+            ParameterSource::Provider => $this->provided($plan, $descriptor, $owner),
+            ParameterSource::Metadata => $owner->metadata(),
             ParameterSource::Inner => $inner,
             ParameterSource::Override => $overrides[$plan->name()],
             ParameterSource::Null => null,
@@ -274,10 +383,10 @@ final class Engine
     /**
      * A provider's value; int or string values for a backed-enum target become the enum case.
      */
-    private function provided(ParameterPlan $plan, ?ServiceDescriptor $descriptor): mixed
+    private function provided(ParameterPlan $plan, ?ServiceDescriptor $descriptor, AbstractResolver $owner): mixed
     {
         $provider = $this->providers[(int) $plan->provider];
-        $value = $provider->provide($plan->target, new ResolutionContext($descriptor, $this->chain()));
+        $value = $provider->provide($plan->target, new ResolutionContext($descriptor, $this->chain(), $owner->metadata()));
 
         $type = $plan->target->getType();
         if ((is_int($value) || is_string($value))
@@ -339,6 +448,11 @@ final class Engine
         assert(is_object($instance));
 
         return [$reflection, $instance, $label];
+    }
+
+    private function context(ServiceDescriptor $descriptor, AbstractResolver $owner): ResolutionContext
+    {
+        return new ResolutionContext($descriptor, $this->chain(), $owner->metadata());
     }
 
     private function satisfies(object $instance, string $service): bool

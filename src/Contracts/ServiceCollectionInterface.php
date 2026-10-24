@@ -16,20 +16,20 @@ use Zana\Container\ServiceLifetime;
  */
 interface ServiceCollectionInterface
 {
-    public function singleton(string $service, string|Closure|null $implementation = null, ?string $key = null, ?string $origin = null): static;
+    public function singleton(string $service, string|Closure|null $implementation = null, ?string $key = null, bool $lazy = false, ?string $origin = null): static;
 
-    public function scoped(string $service, string|Closure|null $implementation = null, ?string $key = null, ?string $origin = null): static;
+    public function scoped(string $service, string|Closure|null $implementation = null, ?string $key = null, bool $lazy = false, ?string $origin = null): static;
 
-    public function transient(string $service, string|Closure|null $implementation = null, ?string $key = null, ?string $origin = null): static;
-
-    /** Register only if no registration of the service (with that key) exists yet. */
-    public function trySingleton(string $service, string|Closure|null $implementation = null, ?string $key = null, ?string $origin = null): static;
+    public function transient(string $service, string|Closure|null $implementation = null, ?string $key = null, bool $lazy = false, ?string $origin = null): static;
 
     /** Register only if no registration of the service (with that key) exists yet. */
-    public function tryScoped(string $service, string|Closure|null $implementation = null, ?string $key = null, ?string $origin = null): static;
+    public function trySingleton(string $service, string|Closure|null $implementation = null, ?string $key = null, bool $lazy = false, ?string $origin = null): static;
 
     /** Register only if no registration of the service (with that key) exists yet. */
-    public function tryTransient(string $service, string|Closure|null $implementation = null, ?string $key = null, ?string $origin = null): static;
+    public function tryScoped(string $service, string|Closure|null $implementation = null, ?string $key = null, bool $lazy = false, ?string $origin = null): static;
+
+    /** Register only if no registration of the service (with that key) exists yet. */
+    public function tryTransient(string $service, string|Closure|null $implementation = null, ?string $key = null, bool $lazy = false, ?string $origin = null): static;
 
     /** Register an existing object as a singleton. The container never disposes it. */
     public function instance(string $service, object $instance, ?string $key = null, ?string $origin = null): static;
@@ -101,6 +101,11 @@ interface ServiceCollectionInterface
     public function scan(string $directory, string $namespace, ?string $origin = null): static;
 
     public function addParameterProvider(ParameterValueProviderInterface $provider): static;
+
+    /** Wrap the creation of every new instance; the first added is outermost. */
+    public function addInterceptor(ResolutionInterceptorInterface $interceptor): static;
+
+    public function addScopeObserver(ScopeObserverInterface $observer): static;
 
     /** Declare that a capability is present. */
     public function provide(string $capability, ?string $origin = null): static;

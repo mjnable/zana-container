@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Zana\Container\Contracts;
 
 use Psr\Container\ContainerInterface as PsrContainerInterface;
+use Zana\Container\ScopeMetadata;
 
 /**
  * Anything services can be resolved from: the root container or a scope.
@@ -63,7 +64,16 @@ interface ServiceResolverInterface extends PsrContainerInterface
     public function call(callable|array|string $callable, array $arguments = []): mixed;
 
     /**
-     * Dispose the services this resolver owns. Idempotent.
+     * Create a child scope owning its own scoped service instances.
+     *
+     * @throws \Zana\Container\Exception\ScopeException If this resolver is disposed
+     */
+    public function createScope(?ScopeMetadata $metadata = null): ScopeInterface;
+
+    public function metadata(): ScopeMetadata;
+
+    /**
+     * Dispose the services this resolver owns, after its open child scopes. Idempotent.
      */
     public function dispose(): void;
 

@@ -11,7 +11,7 @@ use Zana\Container\ServiceLifetime;
 
 /**
  * Validates a registry without creating any service (container specification
- * §10, rules B1 to B11) and builds the plans used at runtime.
+ * §10, rules B1 to B12) and builds the plans used at runtime.
  *
  * Factory and instance registrations are opaque: their own dependencies are
  * only checked when they are resolved.
@@ -82,6 +82,11 @@ final class BuildValidator
 
         if ($this->isType($descriptor->service) && !is_a($class->getName(), $descriptor->service, true)) {
             $this->error('B2', $descriptor, "{$class->getName()} does not implement or extend {$descriptor->service}");
+        }
+
+        $lazyProblem = $descriptor->lazy ? Lazy::unsupportedReason($class) : null;
+        if ($lazyProblem !== null) {
+            $this->error('B12', $descriptor, "cannot be lazy: {$lazyProblem}");
         }
 
         $plan = $this->plans[$class->getName()] ??= $this->planner->forClass($class);
@@ -275,6 +280,9 @@ final class BuildValidator
         $state[$index] = 1;
         $path[] = $index;
         foreach ($this->edges($index) as $target) {
+            if ($this->registry->descriptor($target)->lazy) {
+                continue; // a lazy service is created later, so it breaks the cycle
+            }
             $this->visit($target, $path, $state, $reported);
         }
         $state[$index] = 2;

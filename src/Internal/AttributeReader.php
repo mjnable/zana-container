@@ -53,6 +53,7 @@ final class AttributeReader
                 lifetime: $attribute->lifetime(),
                 implementation: $class->getName(),
                 key: $attribute->key,
+                lazy: $attribute->lazy,
                 origin: $origin,
             ),
             $attribute->key === null ? $attribute->tags : [],

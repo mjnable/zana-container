@@ -10,6 +10,7 @@ use Zana\Container\Attribute\Tagged;
 use Zana\Container\Attribute\ValueAttribute;
 use Zana\Container\Contracts\ParameterValueProviderInterface;
 use Zana\Container\Contracts\ServiceResolverInterface;
+use Zana\Container\ScopeMetadata;
 
 /**
  * Builds resolution plans by reflection, applying the rules of the container
@@ -228,6 +229,11 @@ final class PlanBuilder
         // 4. the owning resolver
         if ($class !== null && in_array($class, self::RESOLVER_TYPES, true)) {
             return new ParameterPlan(ParameterSource::Resolver, $target);
+        }
+
+        // 5. the owning resolver's scope metadata
+        if ($class === ScopeMetadata::class) {
+            return new ParameterPlan(ParameterSource::Metadata, $target);
         }
 
         // 8. variadics (checked first so a registered type still collects every registration)

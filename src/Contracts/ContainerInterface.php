@@ -9,8 +9,4 @@ namespace Zana\Container\Contracts;
  */
 interface ContainerInterface extends ServiceResolverInterface
 {
-    /**
-     * Create a scope that owns its own scoped service instances.
-     */
-    public function createScope(): ScopeInterface;
 }

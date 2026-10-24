@@ -8,6 +8,8 @@ use Closure;
 use Zana\Container\Contracts\CapabilitiesInterface;
 use Zana\Container\Contracts\ContainerInterface;
 use Zana\Container\Contracts\ParameterValueProviderInterface;
+use Zana\Container\Contracts\ResolutionInterceptorInterface;
+use Zana\Container\Contracts\ScopeObserverInterface;
 use Zana\Container\Contracts\ServiceCollectionInterface;
 use Zana\Container\Exception\ContainerBuildException;
 use Zana\Container\Exception\ContainerException;
@@ -55,6 +57,12 @@ class ServiceCollection implements ServiceCollectionInterface
     /** @var list<ParameterValueProviderInterface> */
     private array $providers = [];
 
+    /** @var list<ResolutionInterceptorInterface> */
+    private array $interceptors = [];
+
+    /** @var list<ScopeObserverInterface> */
+    private array $observers = [];
+
     /** @var array<string, list<string>> capability => origins */
     private array $capabilities = [];
 
@@ -75,34 +83,34 @@ class ServiceCollection implements ServiceCollectionInterface
     {
     }
 
-    public function singleton(string $service, string|Closure|null $implementation = null, ?string $key = null, ?string $origin = null): static
+    public function singleton(string $service, string|Closure|null $implementation = null, ?string $key = null, bool $lazy = false, ?string $origin = null): static
     {
-        return $this->add($service, $implementation, ServiceLifetime::Singleton, $key, $origin);
+        return $this->add($service, $implementation, ServiceLifetime::Singleton, $key, $origin, $lazy);
     }
 
-    public function scoped(string $service, string|Closure|null $implementation = null, ?string $key = null, ?string $origin = null): static
+    public function scoped(string $service, string|Closure|null $implementation = null, ?string $key = null, bool $lazy = false, ?string $origin = null): static
     {
-        return $this->add($service, $implementation, ServiceLifetime::Scoped, $key, $origin);
+        return $this->add($service, $implementation, ServiceLifetime::Scoped, $key, $origin, $lazy);
     }
 
-    public function transient(string $service, string|Closure|null $implementation = null, ?string $key = null, ?string $origin = null): static
+    public function transient(string $service, string|Closure|null $implementation = null, ?string $key = null, bool $lazy = false, ?string $origin = null): static
     {
-        return $this->add($service, $implementation, ServiceLifetime::Transient, $key, $origin);
+        return $this->add($service, $implementation, ServiceLifetime::Transient, $key, $origin, $lazy);
     }
 
-    public function trySingleton(string $service, string|Closure|null $implementation = null, ?string $key = null, ?string $origin = null): static
+    public function trySingleton(string $service, string|Closure|null $implementation = null, ?string $key = null, bool $lazy = false, ?string $origin = null): static
     {
-        return $this->isRegistered($service, $key) ? $this->unlessBuilt() : $this->singleton($service, $implementation, $key, $origin);
+        return $this->isRegistered($service, $key) ? $this->unlessBuilt() : $this->singleton($service, $implementation, $key, $lazy, $origin);
     }
 
-    public function tryScoped(string $service, string|Closure|null $implementation = null, ?string $key = null, ?string $origin = null): static
+    public function tryScoped(string $service, string|Closure|null $implementation = null, ?string $key = null, bool $lazy = false, ?string $origin = null): static
     {
-        return $this->isRegistered($service, $key) ? $this->unlessBuilt() : $this->scoped($service, $implementation, $key, $origin);
+        return $this->isRegistered($service, $key) ? $this->unlessBuilt() : $this->scoped($service, $implementation, $key, $lazy, $origin);
     }
 
-    public function tryTransient(string $service, string|Closure|null $implementation = null, ?string $key = null, ?string $origin = null): static
+    public function tryTransient(string $service, string|Closure|null $implementation = null, ?string $key = null, bool $lazy = false, ?string $origin = null): static
     {
-        return $this->isRegistered($service, $key) ? $this->unlessBuilt() : $this->transient($service, $implementation, $key, $origin);
+        return $this->isRegistered($service, $key) ? $this->unlessBuilt() : $this->transient($service, $implementation, $key, $lazy, $origin);
     }
 
     public function instance(string $service, object $instance, ?string $key = null, ?string $origin = null): static
@@ -254,6 +262,24 @@ class ServiceCollection implements ServiceCollectionInterface
         return $this;
     }
 
+    public function addInterceptor(ResolutionInterceptorInterface $interceptor): static
+    {
+        $this->assertNotBuilt();
+
+        $this->interceptors[] = $interceptor;
+
+        return $this;
+    }
+
+    public function addScopeObserver(ScopeObserverInterface $observer): static
+    {
+        $this->assertNotBuilt();
+
+        $this->observers[] = $observer;
+
+        return $this;
+    }
+
     public function provide(string $capability, ?string $origin = null): static
     {
         $this->assertCapabilityCall($capability, 'provide');
@@ -323,10 +349,17 @@ class ServiceCollection implements ServiceCollectionInterface
 
         $this->built = true;
 
-        return new Container($registry, new Engine($registry, $result->plans, $result->decoratorPlans, $this->providers));
+        return new Container($registry, new Engine(
+            $registry,
+            $result->plans,
+            $result->decoratorPlans,
+            $this->providers,
+            $this->interceptors,
+            $this->observers,
+        ));
     }
 
-    private function add(string $service, string|Closure|null $implementation, ServiceLifetime $lifetime, ?string $key, ?string $origin): static
+    private function add(string $service, string|Closure|null $implementation, ServiceLifetime $lifetime, ?string $key, ?string $origin, bool $lazy = false): static
     {
         $this->assertNotBuilt();
 
@@ -336,6 +369,7 @@ class ServiceCollection implements ServiceCollectionInterface
             implementation: $implementation instanceof Closure ? null : ($implementation ?? $service),
             factory: $implementation instanceof Closure ? $implementation : null,
             key: $key,
+            lazy: $lazy,
             origin: $origin,
         );
 

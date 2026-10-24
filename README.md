@@ -152,6 +152,23 @@ $container->get(CapabilitiesInterface::class)->has('reporting');
 
 A capability is presence metadata only; it never resolves to an object.
 
+## Scopes, observers, interceptors and lazy services
+
+```php
+$request = $container->createScope(ScopeMetadata::http($requestId)->withAttribute('correlation_id', $id));
+$job = $request->createScope(ScopeMetadata::queue('send-mail')); // nested: owns its own scoped services
+```
+
+- Scopes can nest. Disposing a scope disposes its open child scopes first.
+- `ScopeMetadata` is immutable and can be injected. Singletons receive the root metadata.
+- `addScopeObserver()` is notified when scopes are created and disposed.
+- `addInterceptor()` wraps the creation of every new instance, for example to
+  time it or trace it. The first interceptor added is the outermost.
+- `lazy: true` (or `#[Singleton(lazy: true)]`) resolves a native PHP lazy proxy.
+  The real instance is created when its state is first accessed. Lazy services
+  break constructor cycles. A class without instance properties cannot be lazy
+  (B12), because PHP would never run its constructor.
+
 ## Build validation
 
 `build()` reports every problem at once in a `ContainerBuildException`, whose
@@ -170,6 +187,7 @@ A capability is presence metadata only; it never resolves to an object.
 | B9 | `#[Inject]` targets are registered |
 | B10 | union and intersection types are not ambiguous |
 | B11 | attributes are used correctly, and value attributes have a provider |
+| B12 | lazy services are classes PHP can make lazy |
 | B13 | scan directories exist and their files declare the expected classes |
 | B14 | required capabilities are provided |
 
@@ -198,8 +216,7 @@ composer analyse    # PHPStan level 8
 ```
 
 The specification lives in the Zana design docs (`packages/container.md`).
-Nested scopes, interceptors, lazy services, the service graph and compilation
-are planned for later M3 steps.
+The service graph and compilation are planned for the last M3 step.
 
 ## License
 

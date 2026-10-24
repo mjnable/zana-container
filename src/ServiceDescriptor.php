@@ -20,6 +20,7 @@ final readonly class ServiceDescriptor
      * @param \Closure|null $factory Closure receiving the owning resolver and returning the instance
      * @param object|null $instance Existing object (never disposed by the container)
      * @param string|null $key Key of a keyed registration, null for unkeyed
+     * @param bool $lazy Resolve as a proxy created on first use (class strategy only)
      * @param string|null $origin Who registered it, e.g. "module:Patients" (diagnostics only)
      */
     public function __construct(
@@ -29,8 +30,13 @@ final readonly class ServiceDescriptor
         public ?\Closure $factory = null,
         public ?object $instance = null,
         public ?string $key = null,
+        public bool $lazy = false,
         public ?string $origin = null,
     ) {
+        if ($lazy && $implementation === null) {
+            throw new \InvalidArgumentException('Only class registrations can be lazy, not factories or instances.');
+        }
+
         if ($service === '') {
             throw new \InvalidArgumentException('The service id must not be empty.');
         }

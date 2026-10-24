@@ -6,17 +6,20 @@ namespace Zana\Container\Internal;
 
 use Zana\Container\Container;
 use Zana\Container\Contracts\Disposable;
+use Zana\Container\Contracts\ScopeInterface;
 use Zana\Container\Contracts\ServiceResolverInterface;
 use Zana\Container\Exception\DisposalException;
 use Zana\Container\Exception\NotFoundException;
 use Zana\Container\Exception\ScopeException;
+use Zana\Container\Scope;
+use Zana\Container\ScopeMetadata;
 
 /**
- * Resolution and disposal shared by the root container and its scopes.
+ * Resolution, scope creation and disposal shared by the root container and its scopes.
  *
  * Each resolver caches the instances it owns (singletons for the root,
- * scoped services for a scope) and disposes the owned Disposable ones in
- * reverse creation order.
+ * scoped services for a scope), tracks the scopes created from it with weak
+ * references, and disposes the owned Disposable instances in reverse creation order.
  *
  * @internal
  */
@@ -28,11 +31,15 @@ abstract class AbstractResolver implements ServiceResolverInterface
     /** @var list<Disposable> In creation order */
     private array $disposables = [];
 
+    /** @var list<\WeakReference<Scope>> */
+    private array $children = [];
+
     private bool $disposed = false;
 
     public function __construct(
         protected readonly Registry $registry,
         protected readonly Engine $engine,
+        private readonly ScopeMetadata $metadata,
     ) {
     }
 
@@ -110,6 +117,43 @@ abstract class AbstractResolver implements ServiceResolverInterface
         return $this->engine->call($callable, $arguments, $this);
     }
 
+    public function createScope(?ScopeMetadata $metadata = null): ScopeInterface
+    {
+        $this->assertUsable();
+
+        $this->children = array_values(array_filter(
+            $this->children,
+            static fn (\WeakReference $reference): bool => $reference->get() !== null
+        ));
+
+        $scope = new Scope(
+            $this->root(),
+            $this,
+            $this->registry,
+            $this->engine,
+            ($metadata ?? new ScopeMetadata('scope'))->completed($this->metadata->id)
+        );
+        $this->children[] = \WeakReference::create($scope);
+
+        try {
+            $this->engine->scopeCreated($scope);
+        } catch (\Throwable $e) {
+            try {
+                $scope->dispose();
+            } catch (\Throwable) {
+                // the observer failure is the one worth reporting
+            }
+            throw $e;
+        }
+
+        return $scope;
+    }
+
+    public function metadata(): ScopeMetadata
+    {
+        return $this->metadata;
+    }
+
     public function isDisposed(): bool
     {
         return $this->disposed;
@@ -124,7 +168,15 @@ abstract class AbstractResolver implements ServiceResolverInterface
 
         $errors = $this->disposeChildren();
 
+        if ($this instanceof Scope) {
+            array_push($errors, ...$this->engine->scopeDisposing($this));
+        }
+
         foreach (array_reverse($this->disposables) as $service) {
+            if (Lazy::isUninitialized($service)) {
+                continue; // never used: nothing to release
+            }
+
             try {
                 $service->dispose();
             } catch (\Throwable $e) {
@@ -134,6 +186,11 @@ abstract class AbstractResolver implements ServiceResolverInterface
 
         $this->disposables = [];
         $this->instances = [];
+
+        if ($this instanceof Scope) {
+            array_push($errors, ...$this->engine->scopeDisposed($this->metadata));
+        }
+
         $this->detach();
 
         if (count($errors) === 1) {
@@ -173,13 +230,14 @@ abstract class AbstractResolver implements ServiceResolverInterface
     }
 
     /**
-     * Dispose resolvers created from this one. Returns the failures.
-     *
-     * @return list<\Throwable>
+     * @internal Called by a child scope when it is disposed.
      */
-    protected function disposeChildren(): array
+    public function forget(Scope $scope): void
     {
-        return [];
+        $this->children = array_values(array_filter(
+            $this->children,
+            static fn (\WeakReference $reference): bool => !in_array($reference->get(), [null, $scope], true)
+        ));
     }
 
     /**
@@ -197,22 +255,31 @@ abstract class AbstractResolver implements ServiceResolverInterface
     }
 
     /**
-     * Split aggregated disposal failures so nested ones are reported individually.
+     * Dispose the open child scopes, most recent first. Returns the failures.
      *
-     * @param list<\Throwable> $errors
      * @return list<\Throwable>
      */
-    protected static function flatten(array $errors): array
+    private function disposeChildren(): array
     {
-        $flat = [];
-        foreach ($errors as $error) {
-            if ($error instanceof DisposalException) {
-                array_push($flat, ...$error->errors());
-            } else {
-                $flat[] = $error;
+        $errors = [];
+
+        foreach (array_reverse($this->children) as $reference) {
+            $scope = $reference->get();
+            if ($scope === null || $scope->isDisposed()) {
+                continue;
+            }
+
+            try {
+                $scope->dispose();
+            } catch (DisposalException $e) {
+                array_push($errors, ...$e->errors());
+            } catch (\Throwable $e) {
+                $errors[] = $e;
             }
         }
 
-        return $flat;
+        $this->children = [];
+
+        return $errors;
     }
 }
