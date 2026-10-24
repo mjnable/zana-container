@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Zana\Container\Tests;
 
+use Zana\Container\Tests\Support\TestServiceCollection;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerExceptionInterface;
 use Psr\Container\ContainerInterface as PsrContainerInterface;
@@ -16,7 +17,7 @@ final class Psr11ComplianceTest extends TestCase
 {
     public function testContainerAndScopesArePsrContainers(): void
     {
-        $container = (new ServiceCollection())->singleton(FileLogger::class)->build();
+        $container = (new TestServiceCollection())->singleton(FileLogger::class)->build();
 
         $this->assertInstanceOf(PsrContainerInterface::class, $container);
         $this->assertInstanceOf(PsrContainerInterface::class, $container->createScope());
@@ -24,7 +25,7 @@ final class Psr11ComplianceTest extends TestCase
 
     public function testHasIsTrueExactlyWhenGetCanSucceed(): void
     {
-        $container = (new ServiceCollection())->singleton(FileLogger::class)->build();
+        $container = (new TestServiceCollection())->singleton(FileLogger::class)->build();
 
         $this->assertTrue($container->has(FileLogger::class));
         $this->assertInstanceOf(FileLogger::class, $container->get(FileLogger::class));
@@ -35,12 +36,12 @@ final class Psr11ComplianceTest extends TestCase
     {
         $this->expectException(NotFoundExceptionInterface::class);
 
-        (new ServiceCollection())->build()->get('unknown');
+        (new TestServiceCollection())->build()->get('unknown');
     }
 
     public function testOtherFailuresAreContainerExceptionsButNotNotFound(): void
     {
-        $container = (new ServiceCollection())->transient(ThrowsInConstructor::class)->build();
+        $container = (new TestServiceCollection())->transient(ThrowsInConstructor::class)->build();
 
         try {
             $container->get(ThrowsInConstructor::class);

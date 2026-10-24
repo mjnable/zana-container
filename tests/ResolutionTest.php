@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Zana\Container\Tests;
 
+use Zana\Container\Tests\Support\TestServiceCollection;
 use PHPUnit\Framework\TestCase;
 use Zana\Container\Contracts\ServiceResolverInterface;
 use Zana\Container\Exception\CircularDependencyException;
@@ -33,7 +34,7 @@ final class ResolutionTest extends TestCase
 
     public function testUnregisteredClassesAreNeverCreated(): void
     {
-        $container = (new ServiceCollection())->build();
+        $container = (new TestServiceCollection())->build();
 
         $this->assertFalse($container->has(FileLogger::class));
 
@@ -43,7 +44,7 @@ final class ResolutionTest extends TestCase
 
     public function testLastRegistrationWins(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->singleton(LoggerInterface::class, NullLogger::class)
             ->build();
@@ -54,7 +55,7 @@ final class ResolutionTest extends TestCase
     public function testGetAllReturnsEveryRegistrationInOrder(): void
     {
         $email = new EmailNotifier();
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->transient(NotifierInterface::class, SmsNotifier::class)
             ->instance(NotifierInterface::class, $email)
             ->transient(NotifierInterface::class, SmsNotifier::class, key: 'keyed')
@@ -72,7 +73,7 @@ final class ResolutionTest extends TestCase
 
     public function testKeyedAndUnkeyedRegistrationsAreSeparate(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->singleton(LoggerInterface::class, NullLogger::class, key: 'null')
             ->build();
@@ -91,7 +92,7 @@ final class ResolutionTest extends TestCase
 
     public function testAliasChainsResolveLikeTheirTarget(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(FileLogger::class)
             ->alias(LoggerInterface::class, FileLogger::class)
             ->alias('logger', LoggerInterface::class)
@@ -104,7 +105,7 @@ final class ResolutionTest extends TestCase
 
     public function testTaggedResolvesMembersInTaggingOrder(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(FileLogger::class)
             ->singleton(NullLogger::class)
             ->alias('file', FileLogger::class)
@@ -121,7 +122,7 @@ final class ResolutionTest extends TestCase
 
     public function testRegisteredClassAndInterfaceParametersAreResolved(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->transient(Mailer::class)
             ->build();
@@ -131,7 +132,7 @@ final class ResolutionTest extends TestCase
 
     public function testResolverParametersReceiveTheOwningResolver(): void
     {
-        $container = (new ServiceCollection())->transient(NeedsResolvers::class)->build();
+        $container = (new TestServiceCollection())->transient(NeedsResolvers::class)->build();
         $scope = $container->createScope();
 
         $fromRoot = $container->get(NeedsResolvers::class);
@@ -144,7 +145,7 @@ final class ResolutionTest extends TestCase
 
     public function testDefaultsAreUsedWhenNothingIsRegistered(): void
     {
-        $container = (new ServiceCollection())->transient(WithDefaults::class)->build();
+        $container = (new TestServiceCollection())->transient(WithDefaults::class)->build();
 
         $first = $container->get(WithDefaults::class);
         $second = $container->get(WithDefaults::class);
@@ -155,7 +156,7 @@ final class ResolutionTest extends TestCase
 
     public function testRegistrationsTakePrecedenceOverDefaults(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->singleton(Clock::class)
             ->transient(WithDefaults::class)
@@ -169,14 +170,14 @@ final class ResolutionTest extends TestCase
 
     public function testNullableParametersWithoutDefaultReceiveNull(): void
     {
-        $container = (new ServiceCollection())->transient(WithNullable::class)->build();
+        $container = (new TestServiceCollection())->transient(WithNullable::class)->build();
 
         $this->assertNull($container->get(WithNullable::class)->optional);
     }
 
     public function testUntypedAndMixedParametersUseTheirDefaults(): void
     {
-        $container = (new ServiceCollection())->transient(NeedsUntyped::class)->build();
+        $container = (new TestServiceCollection())->transient(NeedsUntyped::class)->build();
 
         $service = $container->get(NeedsUntyped::class);
         $this->assertSame(['default', null], [$service->thing, $service->untyped]);
@@ -184,7 +185,7 @@ final class ResolutionTest extends TestCase
 
     public function testVariadicsReceiveEveryRegistrationAndDefaultsStayPositional(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->transient(NotifierInterface::class, EmailNotifier::class)
             ->transient(NotifierInterface::class, SmsNotifier::class)
@@ -201,7 +202,7 @@ final class ResolutionTest extends TestCase
 
     public function testEmptyVariadicIsAllowed(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->transient(NotifierHub::class)
             ->build();
@@ -214,7 +215,7 @@ final class ResolutionTest extends TestCase
     public function testFactoriesReceiveTheOwningResolver(): void
     {
         $received = [];
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(Clock::class, static function (ServiceResolverInterface $r) use (&$received): Clock {
                 $received[] = $r;
 
@@ -236,7 +237,7 @@ final class ResolutionTest extends TestCase
 
     public function testFactoryResultMustMatchTheService(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->transient(LoggerInterface::class, static fn (): Clock => new Clock())
             ->transient('anything', static fn (): Clock => new Clock())
             ->build();
@@ -250,7 +251,7 @@ final class ResolutionTest extends TestCase
 
     public function testFactoryMustReturnAnObject(): void
     {
-        $container = (new ServiceCollection())->transient('number', static fn (): int => 42)->build();
+        $container = (new TestServiceCollection())->transient('number', static fn (): int => 42)->build();
 
         $this->expectException(ResolutionException::class);
         $this->expectExceptionMessage('got int');
@@ -261,7 +262,7 @@ final class ResolutionTest extends TestCase
 
     public function testCycleThroughFactoriesIsDetectedAtRuntime(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton('a', static fn (ServiceResolverInterface $r): object => $r->get('b'), origin: 'module:A')
             ->singleton('b', static fn (ServiceResolverInterface $r): object => $r->get('a'))
             ->build();
@@ -274,7 +275,7 @@ final class ResolutionTest extends TestCase
     public function testResolutionStackIsCleanAfterFailure(): void
     {
         $calls = new \ArrayObject();
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->transient('flaky', static function () use ($calls): Clock {
                 $calls->append(true);
                 if (count($calls) === 1) {
@@ -297,7 +298,7 @@ final class ResolutionTest extends TestCase
 
     public function testDecoratorsApplyInRegistrationOrder(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->decorate(LoggerInterface::class, PrefixLogger::class)
             ->decorate(LoggerInterface::class, static fn (LoggerInterface $inner): LoggerInterface => new UpperLogger($inner))
@@ -311,7 +312,7 @@ final class ResolutionTest extends TestCase
 
     public function testDecoratorsApplyToEveryRegistrationIncludingKeyed(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->transient(LoggerInterface::class, FileLogger::class)
             ->transient(LoggerInterface::class, NullLogger::class)
             ->transient(LoggerInterface::class, FileLogger::class, key: 'file')
@@ -325,7 +326,7 @@ final class ResolutionTest extends TestCase
 
     public function testClassDecoratorsResolveTheirOtherParameters(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(Clock::class)
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->decorate(LoggerInterface::class, PrefixLogger::class)
@@ -338,7 +339,7 @@ final class ResolutionTest extends TestCase
 
     public function testClosureDecoratorResultMustMatchTheService(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->decorate(LoggerInterface::class, static fn (): Clock => new Clock())
             ->build();
@@ -351,7 +352,7 @@ final class ResolutionTest extends TestCase
     public function testInstanceRegistrationsCanBeDecorated(): void
     {
         $inner = new FileLogger();
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->instance(LoggerInterface::class, $inner)
             ->decorate(LoggerInterface::class, PrefixLogger::class)
             ->build();
@@ -366,7 +367,7 @@ final class ResolutionTest extends TestCase
 
     public function testConstructorFailuresAreWrappedWithTheChain(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->transient(ThrowsInConstructor::class, origin: 'module:Db')
             ->transient('report', static fn (ServiceResolverInterface $r): object => $r->get(ThrowsInConstructor::class), origin: 'module:Reports')
             ->build();
@@ -383,7 +384,7 @@ final class ResolutionTest extends TestCase
 
     public function testNotFoundInsideResolutionReportsTheChain(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->transient('report', static fn (ServiceResolverInterface $r): object => $r->get('missing'), origin: 'module:Reports')
             ->build();
 

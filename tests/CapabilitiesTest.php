@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Zana\Container\Tests;
 
+use Zana\Container\Tests\Support\TestServiceCollection;
 use PHPUnit\Framework\TestCase;
 use Zana\Container\Contracts\CapabilitiesInterface;
 use Zana\Container\Exception\ContainerBuildException;
@@ -18,7 +19,7 @@ final class CapabilitiesTest extends TestCase
 {
     public function testCapabilitiesAreQueryableThroughAnInjectableService(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->provide('reporting', 'package:reporting')
             ->provide('reporting', 'module:Finance')
             ->provide('reporting', 'module:Finance')
@@ -37,7 +38,7 @@ final class CapabilitiesTest extends TestCase
 
     public function testWhenCapabilityRunsAtBuildAfterOtherRegistrations(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->whenCapability('reporting', static fn (ServiceCollection $s) => $s->singleton(LoggerInterface::class, NullLogger::class))
             ->whenCapability('search', static fn (ServiceCollection $s) => $s->singleton(Clock::class))
             ->singleton(LoggerInterface::class, FileLogger::class)
@@ -50,7 +51,7 @@ final class CapabilitiesTest extends TestCase
 
     public function testCapabilityCallsAreForbiddenInsideCallbacks(): void
     {
-        $services = (new ServiceCollection())
+        $services = (new TestServiceCollection())
             ->provide('reporting')
             ->whenCapability('reporting', static fn (ServiceCollection $s) => $s->provide('search'));
 
@@ -61,7 +62,7 @@ final class CapabilitiesTest extends TestCase
 
     public function testCapabilitiesCanBeDeclaredInsideImmediateCallbacks(): void
     {
-        $container = (new ServiceCollection(['testing']))
+        $container = (new TestServiceCollection(['testing']))
             ->profile('testing', static fn (ServiceCollection $s) => $s->provide('fakes'))
             ->build();
 
@@ -72,19 +73,19 @@ final class CapabilitiesTest extends TestCase
     {
         foreach (['Reporting', '1st', '', 'with space'] as $name) {
             try {
-                (new ServiceCollection())->provide($name);
+                (new TestServiceCollection())->provide($name);
                 $this->fail("'{$name}' should be rejected.");
             } catch (ContainerException $e) {
                 $this->assertStringContainsString('Invalid capability name', $e->getMessage());
             }
         }
 
-        $this->assertTrue((new ServiceCollection())->provide('reporting.pdf-v2')->build()->has(CapabilitiesInterface::class));
+        $this->assertTrue((new TestServiceCollection())->provide('reporting.pdf-v2')->build()->has(CapabilitiesInterface::class));
     }
 
     public function testRequirementsAndTheReservedServiceAreValidated(): void
     {
-        $services = (new ServiceCollection())
+        $services = (new TestServiceCollection())
             ->requires('reporting', 'module:Finance')
             ->requires('audit')
             ->provide('audit')

@@ -38,16 +38,13 @@ final class Engine
     private readonly PlanBuilder $planner;
 
     /**
-     * @param array<class-string, ConstructorPlan> $plans
-     * @param array<string, ConstructorPlan> $decoratorPlans
      * @param list<ParameterValueProviderInterface> $providers
      * @param list<ResolutionInterceptorInterface> $interceptors First is outermost
      * @param list<ScopeObserverInterface> $observers
      */
     public function __construct(
         private readonly Registry $registry,
-        private readonly array $plans,
-        private readonly array $decoratorPlans,
+        private readonly PlanSource $plans,
         private readonly array $providers,
         private readonly array $interceptors = [],
         private readonly array $observers = [],
@@ -275,7 +272,7 @@ final class Engine
             /** @var class-string $implementation */
             $implementation = $descriptor->implementation;
 
-            return $this->construct($this->plans[$implementation], $owner, $descriptor);
+            return $this->construct($this->plans->forClass($implementation), $owner, $descriptor);
         } catch (ContainerException $e) {
             throw $e;
         } catch (\Throwable $e) {
@@ -293,7 +290,7 @@ final class Engine
         try {
             $result = $decorator instanceof Closure
                 ? $decorator($inner, $owner)
-                : $this->construct($this->decoratorPlans[BuildResult::decoratorKey($descriptor->service, $decorator)], $owner, $descriptor, $inner);
+                : $this->construct($this->plans->forDecorator($descriptor->service, $decorator), $owner, $descriptor, $inner);
         } catch (ContainerException $e) {
             throw $e;
         } catch (\Throwable $e) {

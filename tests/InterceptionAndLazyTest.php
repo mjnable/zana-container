@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Zana\Container\Tests;
 
+use Zana\Container\Tests\Support\TestServiceCollection;
 use PHPUnit\Framework\TestCase;
 use Zana\Container\Attribute\Singleton;
 use Zana\Container\Exception\ResolutionException;
@@ -39,7 +40,7 @@ final class InterceptionAndLazyTest extends TestCase
     {
         /** @var \ArrayObject<int, string> $log */
         $log = new \ArrayObject();
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->addInterceptor(new RecordingInterceptor('outer', $log))
             ->addInterceptor(new RecordingInterceptor('inner', $log))
             ->singleton(Clock::class)
@@ -56,7 +57,7 @@ final class InterceptionAndLazyTest extends TestCase
     {
         /** @var \ArrayObject<int, string> $log */
         $log = new \ArrayObject();
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->addInterceptor(new RecordingInterceptor('i', $log))
             ->instance(Clock::class, new Clock())
             ->singleton(LoggerInterface::class, FileLogger::class)
@@ -72,7 +73,7 @@ final class InterceptionAndLazyTest extends TestCase
 
     public function testInterceptorResultMustSatisfyTheService(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->addInterceptor(new ReplacingInterceptor())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->build();
@@ -84,7 +85,7 @@ final class InterceptionAndLazyTest extends TestCase
 
     public function testInterceptorFailuresAreWrapped(): void
     {
-        $container = (new ServiceCollection())->addInterceptor(new ThrowingInterceptor())->singleton(Clock::class)->build();
+        $container = (new TestServiceCollection())->addInterceptor(new ThrowingInterceptor())->singleton(Clock::class)->build();
 
         $this->expectException(ResolutionException::class);
         $this->expectExceptionMessage('interceptor exploded');
@@ -95,7 +96,7 @@ final class InterceptionAndLazyTest extends TestCase
 
     public function testLazyServicesAreCreatedOnFirstUseOnly(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(Clock::class)
             ->singleton(ExpensiveService::class, lazy: true)
             ->build();
@@ -112,7 +113,7 @@ final class InterceptionAndLazyTest extends TestCase
 
     public function testLazyTransientsGiveOneProxyPerResolution(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(Clock::class)
             ->transient(ExpensiveService::class, lazy: true)
             ->build();
@@ -127,7 +128,7 @@ final class InterceptionAndLazyTest extends TestCase
 
     public function testLazyServicesBreakConstructorCycles(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(ChickenService::class)
             ->singleton(EggService::class, lazy: true)
             ->build();
@@ -139,7 +140,7 @@ final class InterceptionAndLazyTest extends TestCase
 
     public function testUninitialisedLazyServicesAreNotDisposed(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton('used', LazyDisposable::class, lazy: true)
             ->singleton('unused', LazyDisposable::class, lazy: true)
             ->build();
@@ -160,7 +161,7 @@ final class InterceptionAndLazyTest extends TestCase
             public int $state = 0;
         };
 
-        $services = (new ServiceCollection())->addAttributed($class::class);
+        $services = (new TestServiceCollection())->addAttributed($class::class);
 
         $this->assertTrue($services->descriptors()[0]->lazy);
     }
@@ -174,7 +175,7 @@ final class InterceptionAndLazyTest extends TestCase
 
     public function testInternalClassesCannotBeLazy(): void
     {
-        $services = (new ServiceCollection())->singleton(LazyArrayObject::class, lazy: true);
+        $services = (new TestServiceCollection())->singleton(LazyArrayObject::class, lazy: true);
 
         $this->expectExceptionMessage('[B12] ' . LazyArrayObject::class . ': cannot be lazy: PHP cannot make internal classes');
         $services->build();
@@ -182,7 +183,7 @@ final class InterceptionAndLazyTest extends TestCase
 
     public function testClassesWithoutStateCannotBeLazy(): void
     {
-        $services = (new ServiceCollection())->singleton(Stateless::class, lazy: true);
+        $services = (new TestServiceCollection())->singleton(Stateless::class, lazy: true);
 
         $this->expectExceptionMessage('its constructor would never run');
         $services->build();

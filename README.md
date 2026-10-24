@@ -194,6 +194,32 @@ $job = $request->createScope(ScopeMetadata::queue('send-mail')); // nested: owns
 **Limitation:** factory and instance registrations are opaque to B3–B5. Their
 dependencies are only checked when they are resolved.
 
+## Analysis, graph and compilation
+
+```php
+$report = $services->analyze();              // validates without creating anything
+$report->isValid();
+$report->errors();                           // list<BuildError>
+$report->graph()->toArray();                 // nodes, edges, capabilities; JSON-encodable
+
+$container->graph();                         // the same graph from a built container
+```
+
+For production, compile the validated registrations into a class:
+
+```php
+$source = (new ContainerCompiler())->compile($services, 'App\\CompiledContainer');
+file_put_contents($path, $source);           // storing it is up to you
+
+$container = $services->build(compiled: \App\CompiledContainer::class);
+```
+
+A compiled build skips validation, directory scanning and attribute reading.
+Closures, instances, providers, interceptors and observers still come from
+the live collection. A fingerprint check throws `StaleCompilationException`
+when the registrations no longer match. It cannot see changes inside class
+files, so recompile when a registered class's constructor changes.
+
 ## Disposal
 
 Services implementing `Zana\Container\Contracts\Disposable` are disposed by the
@@ -211,12 +237,11 @@ always dispose scopes explicitly.
 
 ```
 composer install
-composer test       # PHPUnit
+composer test       # PHPUnit, then the same suite against compiled containers
 composer analyse    # PHPStan level 8
 ```
 
 The specification lives in the Zana design docs (`packages/container.md`).
-The service graph and compilation are planned for the last M3 step.
 
 ## License
 

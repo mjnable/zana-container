@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Zana\Container\Tests;
 
+use Zana\Container\Tests\Support\TestServiceCollection;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Zana\Container\BuildError;
@@ -146,7 +147,7 @@ final class BuildValidationTest extends TestCase
     #[DataProvider('invalidRegistrations')]
     public function testRuleIsEnforced(\Closure $register, string $code, string $message): void
     {
-        $services = new ServiceCollection();
+        $services = new TestServiceCollection();
         $register($services);
 
         $errors = $this->buildErrors($services);
@@ -157,7 +158,7 @@ final class BuildValidationTest extends TestCase
 
     public function testValidGraphBuilds(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->transient(Mailer::class)
             ->scoped(UnitOfWork::class)
@@ -173,7 +174,7 @@ final class BuildValidationTest extends TestCase
 
     public function testFactoriesAreOpaqueToValidation(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->scoped(UnitOfWork::class)
             ->singleton('captive', static fn ($r) => $r->get(UnitOfWork::class))
             ->build();
@@ -183,7 +184,7 @@ final class BuildValidationTest extends TestCase
 
     public function testEveryErrorIsReportedAtOnce(): void
     {
-        $services = (new ServiceCollection())
+        $services = (new TestServiceCollection())
             ->singleton(LoggerInterface::class, origin: 'module:Core')
             ->transient(NeedsScalar::class)
             ->tag('loggers', 'missing');

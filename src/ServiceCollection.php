@@ -13,7 +13,15 @@ use Zana\Container\Contracts\ScopeObserverInterface;
 use Zana\Container\Contracts\ServiceCollectionInterface;
 use Zana\Container\Exception\ContainerBuildException;
 use Zana\Container\Exception\ContainerException;
+use Zana\Container\Compiled\CompiledContainer;
+use Zana\Container\Exception\StaleCompilationException;
+use Zana\Container\Graph\ServiceGraph;
+use Zana\Container\Internal\ArrayPlanSource;
 use Zana\Container\Internal\AttributeReader;
+use Zana\Container\Internal\CompiledPlanSource;
+use Zana\Container\Internal\GraphBuilder;
+use Zana\Container\Internal\PlanCodec;
+use Zana\Container\Internal\PlanSource;
 use Zana\Container\Internal\BuildValidator;
 use Zana\Container\Internal\Capabilities;
 use Zana\Container\Internal\Engine;
@@ -50,6 +58,9 @@ class ServiceCollection implements ServiceCollectionInterface
 
     /** @var list<array{string, string, ?string}> directory, namespace, origin */
     private array $pendingScans = [];
+
+    /** @var list<array{string, string, ?string}> Every scan() call, kept for the fingerprint */
+    private array $scanRequests = [];
 
     /** @var list<BuildError> */
     private array $scanErrors = [];
@@ -249,6 +260,7 @@ class ServiceCollection implements ServiceCollectionInterface
         $this->assertNotBuilt();
 
         $this->pendingScans[] = [$directory, $namespace, $origin];
+        $this->scanRequests[] = [str_replace("\\", "/", rtrim($directory, "/\\")), trim($namespace, "\\"), $origin];
 
         return $this;
     }
@@ -322,16 +334,141 @@ class ServiceCollection implements ServiceCollectionInterface
         return [...$this->scanned, ...$this->descriptors];
     }
 
-    public function build(): ContainerInterface
+    public function analyze(): BuildReport
     {
         $this->assertNotBuilt();
 
+        [$registry, $result, $errors] = $this->prepare();
+
+        return new BuildReport(
+            GraphBuilder::build($registry, $result->plans, $result->decoratorPlans, $this->capabilities),
+            $errors,
+        );
+    }
+
+    public function build(?string $compiled = null): ContainerInterface
+    {
+        $this->assertNotBuilt();
+
+        if ($compiled !== null) {
+            return $this->buildCompiled($compiled);
+        }
+
+        [$registry, $result, $errors] = $this->prepare();
+
+        if ($errors !== []) {
+            throw ContainerBuildException::withErrors($errors);
+        }
+
+        $this->built = true;
+        $capabilities = $this->capabilities;
+
+        return new Container(
+            $registry,
+            $this->engine($registry, new ArrayPlanSource($result->plans, $result->decoratorPlans)),
+            static fn (): ServiceGraph => GraphBuilder::build($registry, $result->plans, $result->decoratorPlans, $capabilities),
+        );
+    }
+
+    /**
+     * Validate and gather what ContainerCompiler writes into a compiled class.
+     *
+     * @internal Used by ContainerCompiler.
+     * @return array{fingerprint: string, data: array<string, mixed>}
+     * @throws ContainerBuildException If the registrations are invalid
+     */
+    public function compilation(): array
+    {
+        $this->assertNotBuilt();
+
+        [$registry, $result, $errors] = $this->prepare();
+        if ($errors !== []) {
+            throw ContainerBuildException::withErrors($errors);
+        }
+
+        return [
+            'fingerprint' => $this->fingerprint(),
+            'data' => [
+                'scanned' => array_map(
+                    static fn (ServiceDescriptor $d): array => [$d->service, $d->lifetime->name, (string) $d->implementation, $d->key, $d->lazy, $d->origin],
+                    $this->scanned
+                ),
+                'scannedTags' => $this->scannedTags,
+                'plans' => array_map(PlanCodec::encode(...), $result->plans),
+                'decoratorPlans' => array_map(PlanCodec::encode(...), $result->decoratorPlans),
+                'graph' => GraphBuilder::build($registry, $result->plans, $result->decoratorPlans, $this->capabilities)->toArray(),
+            ],
+        ];
+    }
+
+    /**
+     * @param class-string|string $compiled
+     */
+    private function buildCompiled(string $compiled): ContainerInterface
+    {
+        if (!is_subclass_of($compiled, CompiledContainer::class)) {
+            throw StaleCompilationException::notCompiled($compiled);
+        }
+
+        $this->applyCapabilityCallbacks();
+
+        $fingerprint = $this->fingerprint();
+        if ($compiled::FINGERPRINT !== $fingerprint) {
+            throw StaleCompilationException::for($compiled, $compiled::FINGERPRINT, $fingerprint);
+        }
+
+        $data = $compiled::data();
+
+        $this->pendingScans = [];
+        $this->scanned = array_map(
+            static fn (array $d): ServiceDescriptor => new ServiceDescriptor(
+                $d[0],
+                constant(ServiceLifetime::class . '::' . $d[1]),
+                implementation: $d[2],
+                key: $d[3],
+                lazy: $d[4],
+                origin: $d[5],
+            ),
+            $data['scanned']
+        );
+        $this->scannedTags = $data['scannedTags'];
+
+        $registry = $this->registry([...$this->scanned, ...$this->descriptors]);
+        $this->built = true;
+
+        $graph = ServiceGraph::fromArray($data['graph']);
+
+        return new Container(
+            $registry,
+            $this->engine($registry, new CompiledPlanSource($data['plans'], $data['decoratorPlans'])),
+            static fn (): ServiceGraph => $graph,
+        );
+    }
+
+    /**
+     * Run scans and capability callbacks, then validate.
+     *
+     * @return array{Registry, Internal\BuildResult, list<BuildError>}
+     */
+    private function prepare(): array
+    {
         $this->runPendingScans();
         $this->applyCapabilityCallbacks();
 
         $descriptors = [...$this->scanned, ...$this->descriptors];
         $errors = [...$this->scanErrors, ...$this->capabilityErrors($descriptors)];
 
+        $registry = $this->registry($descriptors);
+        $result = (new BuildValidator($registry, $this->providers))->validate();
+
+        return [$registry, $result, [...$errors, ...$result->errors]];
+    }
+
+    /**
+     * @param list<ServiceDescriptor> $descriptors
+     */
+    private function registry(array $descriptors): Registry
+    {
         $descriptors[] = new ServiceDescriptor(
             CapabilitiesInterface::class,
             ServiceLifetime::Singleton,
@@ -339,24 +476,51 @@ class ServiceCollection implements ServiceCollectionInterface
             origin: 'zana/container',
         );
 
-        $registry = new Registry($descriptors, $this->aliases, $this->mergedTags(), $this->decorators);
-        $result = (new BuildValidator($registry, $this->providers))->validate();
-        $errors = [...$errors, ...$result->errors];
+        return new Registry($descriptors, $this->aliases, $this->mergedTags(), $this->decorators);
+    }
 
-        if ($errors !== []) {
-            throw ContainerBuildException::withErrors($errors);
-        }
+    private function engine(Registry $registry, PlanSource $plans): Engine
+    {
+        return new Engine($registry, $plans, $this->providers, $this->interceptors, $this->observers);
+    }
 
-        $this->built = true;
+    /**
+     * Identifies the registrations a compiled container was generated from
+     * (specification §11). Scan requests count, not their results; closures
+     * and instances count by kind and class, not by identity.
+     */
+    private function fingerprint(): string
+    {
+        $describe = static fn (ServiceDescriptor $d): array => [
+            $d->service,
+            $d->key,
+            $d->lifetime->name,
+            match (true) {
+                $d->instance !== null => 'instance:' . get_class($d->instance),
+                $d->factory !== null => 'factory',
+                default => 'class:' . $d->implementation,
+            },
+            $d->lazy,
+            $d->origin,
+        ];
 
-        return new Container($registry, new Engine(
-            $registry,
-            $result->plans,
-            $result->decoratorPlans,
-            $this->providers,
-            $this->interceptors,
-            $this->observers,
-        ));
+        return hash('xxh128', serialize([
+            ServiceGraph::SCHEMA,
+            array_map($describe, $this->descriptors),
+            $this->aliases,
+            $this->tags,
+            array_map(
+                static fn (array $decorators): array => array_map(static fn (string|Closure $d): string => $d instanceof Closure ? 'closure' : $d, $decorators),
+                $this->decorators
+            ),
+            $this->scanRequests,
+            $this->activeProfiles,
+            array_map('get_class', $this->providers),
+            array_map('get_class', $this->interceptors),
+            array_map('get_class', $this->observers),
+            $this->capabilities,
+            $this->requirements,
+        ]));
     }
 
     private function add(string $service, string|Closure|null $implementation, ServiceLifetime $lifetime, ?string $key, ?string $origin, bool $lazy = false): static

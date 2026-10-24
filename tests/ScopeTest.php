@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Zana\Container\Tests;
 
+use Zana\Container\Tests\Support\TestServiceCollection;
 use PHPUnit\Framework\TestCase;
 use Zana\Container\Exception\DisposalException;
 use Zana\Container\Exception\ScopeException;
@@ -27,7 +28,7 @@ final class ScopeTest extends TestCase
 
     public function testChildScopesOwnTheirScopedInstances(): void
     {
-        $container = (new ServiceCollection())->scoped(UnitOfWork::class)->singleton(Clock::class)->build();
+        $container = (new TestServiceCollection())->scoped(UnitOfWork::class)->singleton(Clock::class)->build();
         $parent = $container->createScope();
         $child = $parent->createScope();
 
@@ -39,7 +40,7 @@ final class ScopeTest extends TestCase
 
     public function testDisposingAParentDisposesItsChildrenFirst(): void
     {
-        $container = (new ServiceCollection())->scoped(DisposableConnection::class)->build();
+        $container = (new TestServiceCollection())->scoped(DisposableConnection::class)->build();
         $parent = $container->createScope(ScopeMetadata::http());
         $child = $parent->createScope(ScopeMetadata::queue('job'));
         $parent->get(DisposableConnection::class);
@@ -56,7 +57,7 @@ final class ScopeTest extends TestCase
 
     public function testDisposedResolversCannotCreateScopes(): void
     {
-        $container = (new ServiceCollection())->build();
+        $container = (new TestServiceCollection())->build();
         $scope = $container->createScope();
         $scope->dispose();
 
@@ -68,7 +69,7 @@ final class ScopeTest extends TestCase
 
     public function testMetadataIsCompletedByTheContainer(): void
     {
-        $container = (new ServiceCollection())->build();
+        $container = (new TestServiceCollection())->build();
         $request = $container->createScope(ScopeMetadata::http('req-42')->withAttribute('correlation_id', 'abc'));
         $job = $request->createScope();
 
@@ -90,7 +91,7 @@ final class ScopeTest extends TestCase
 
     public function testScopeMetadataCanBeInjected(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->scoped('scoped-aware', ScopeAware::class)
             ->singleton('singleton-aware', ScopeAware::class)
             ->build();
@@ -105,7 +106,7 @@ final class ScopeTest extends TestCase
     public function testObserversSeeTheScopeLifecycle(): void
     {
         $observer = new RecordingObserver();
-        $container = (new ServiceCollection())->addScopeObserver($observer)->scoped(DisposableConnection::class)->build();
+        $container = (new TestServiceCollection())->addScopeObserver($observer)->scoped(DisposableConnection::class)->build();
 
         $scope = $container->createScope(ScopeMetadata::cli());
         $scope->get(DisposableConnection::class);
@@ -118,7 +119,7 @@ final class ScopeTest extends TestCase
 
     public function testAFailingCreatedObserverDisposesTheScope(): void
     {
-        $container = (new ServiceCollection())->addScopeObserver(new RecordingObserver(failOnCreate: true))->build();
+        $container = (new TestServiceCollection())->addScopeObserver(new RecordingObserver(failOnCreate: true))->build();
 
         try {
             $container->createScope();
@@ -130,7 +131,7 @@ final class ScopeTest extends TestCase
 
     public function testDisposingObserverFailuresAreCollected(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->addScopeObserver(new RecordingObserver(failOnDisposing: true))
             ->addScopeObserver(new RecordingObserver(failOnDisposing: true))
             ->scoped(DisposableConnection::class)

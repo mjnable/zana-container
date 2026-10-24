@@ -24,7 +24,11 @@
         "files": ["tests/Fixtures/services.php", "tests/Fixtures/attributes.php", "tests/Fixtures/runtime.php"]
     },
     "scripts": {
-        "test": "phpunit",
+        "test": [
+            "phpunit",
+            "@putenv ZANA_CONTAINER_COMPILED=1",
+            "phpunit"
+        ],
         "analyse": "phpstan analyse --memory-limit=512M"
     },
     "config": {

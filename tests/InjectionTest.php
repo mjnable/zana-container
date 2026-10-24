@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Zana\Container\Tests;
 
+use Zana\Container\Tests\Support\TestServiceCollection;
 use PHPUnit\Framework\TestCase;
 use Zana\Container\Exception\ContainerException;
 use Zana\Container\Exception\NotFoundException;
@@ -28,7 +29,7 @@ final class InjectionTest extends TestCase
 
     public function testPropertiesAreInjectedAfterConstruction(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->addParameterProvider(new ArraySettingsProvider(['mode' => 'strict']))
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->singleton(Clock::class)
@@ -49,7 +50,7 @@ final class InjectionTest extends TestCase
 
     public function testRegisteredPropertyTypesOverrideTheDefault(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->addParameterProvider(new ArraySettingsProvider(['mode' => 'lenient']))
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->singleton(Clock::class)
@@ -64,7 +65,7 @@ final class InjectionTest extends TestCase
 
     public function testInjectMethodsRunInDeclarationOrder(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->singleton(Clock::class)
             ->transient(WithInjectedMethods::class)
@@ -133,7 +134,7 @@ final class InjectionTest extends TestCase
 
     public function testCallOnAnUnregisteredClassIsNotFound(): void
     {
-        $container = (new ServiceCollection())->build();
+        $container = (new TestServiceCollection())->build();
 
         $this->expectException(NotFoundException::class);
         $container->call([ReportController::class, 'show'], ['id' => 1]);
@@ -149,7 +150,7 @@ final class InjectionTest extends TestCase
 
     private function container(): \Zana\Container\Contracts\ContainerInterface
     {
-        return (new ServiceCollection())
+        return (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->singleton(Clock::class)
             ->transient(ReportController::class)

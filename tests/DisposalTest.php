@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Zana\Container\Tests;
 
+use Zana\Container\Tests\Support\TestServiceCollection;
 use PHPUnit\Framework\TestCase;
 use Zana\Container\Exception\DisposalException;
 use Zana\Container\Exception\ScopeException;
@@ -26,7 +27,7 @@ final class DisposalTest extends TestCase
 
     public function testScopeDisposesInReverseCreationOrder(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->scoped(DisposableConnection::class)
             ->scoped(DisposableSession::class)
             ->build();
@@ -40,7 +41,7 @@ final class DisposalTest extends TestCase
 
     public function testDecoratorsAreDisposedBeforeWhatTheyWrap(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(CacheInterface::class, DisposableCache::class)
             ->decorate(CacheInterface::class, DisposableCacheDecorator::class)
             ->build();
@@ -53,7 +54,7 @@ final class DisposalTest extends TestCase
 
     public function testRootDisposesOpenScopesFirst(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(DisposableConnection::class)
             ->scoped(CacheInterface::class, DisposableCache::class)
             ->build();
@@ -69,7 +70,7 @@ final class DisposalTest extends TestCase
 
     public function testInstancesAndTransientsAreNotDisposed(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->instance(DisposableConnection::class, new DisposableConnection())
             ->transient(CacheInterface::class, DisposableCache::class)
             ->build();
@@ -83,7 +84,7 @@ final class DisposalTest extends TestCase
 
     public function testDisposalIsIdempotent(): void
     {
-        $container = (new ServiceCollection())->singleton(DisposableConnection::class)->build();
+        $container = (new TestServiceCollection())->singleton(DisposableConnection::class)->build();
         $container->get(DisposableConnection::class);
 
         $container->dispose();
@@ -94,7 +95,7 @@ final class DisposalTest extends TestCase
 
     public function testDisposedResolversRejectUse(): void
     {
-        $container = (new ServiceCollection())->singleton(DisposableConnection::class)->build();
+        $container = (new TestServiceCollection())->singleton(DisposableConnection::class)->build();
         $scope = $container->createScope();
         $scope->dispose();
 
@@ -121,7 +122,7 @@ final class DisposalTest extends TestCase
 
     public function testOneFailureIsRethrownUnchangedAfterDisposingTheRest(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(DisposableConnection::class)
             ->singleton(ThrowingDisposable::class)
             ->build();
@@ -141,7 +142,7 @@ final class DisposalTest extends TestCase
 
     public function testSeveralFailuresAreAggregatedAcrossScopes(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(ThrowingDisposable::class)
             ->scoped(OtherThrowingDisposable::class)
             ->build();
@@ -161,7 +162,7 @@ final class DisposalTest extends TestCase
 
     public function testDroppedScopesAreNotKeptAlive(): void
     {
-        $container = (new ServiceCollection())->scoped(DisposableConnection::class)->build();
+        $container = (new TestServiceCollection())->scoped(DisposableConnection::class)->build();
 
         $scope = $container->createScope();
         $scope->get(DisposableConnection::class);

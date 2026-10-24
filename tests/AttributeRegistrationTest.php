@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Zana\Container\Tests;
 
+use Zana\Container\Tests\Support\TestServiceCollection;
 use PHPUnit\Framework\TestCase;
 use Zana\Container\Exception\ContainerException;
 use Zana\Container\ServiceCollection;
@@ -29,7 +30,7 @@ final class AttributeRegistrationTest extends TestCase
 
     public function testWhenRunsTheRegistrationOnlyIfTheConditionHolds(): void
     {
-        $services = (new ServiceCollection())
+        $services = (new TestServiceCollection())
             ->when(true, static fn (ServiceCollection $s) => $s->singleton(FileLogger::class))
             ->when(static fn (): bool => false, static fn (ServiceCollection $s) => $s->singleton(PushNotifier::class));
 
@@ -39,7 +40,7 @@ final class AttributeRegistrationTest extends TestCase
 
     public function testProfileRunsForActiveProfilesOnly(): void
     {
-        $services = (new ServiceCollection(['testing']))
+        $services = (new TestServiceCollection(['testing']))
             ->profile('testing', static fn (ServiceCollection $s) => $s->singleton(FileLogger::class))
             ->profile('production', static fn (ServiceCollection $s) => $s->singleton(PushNotifier::class));
 
@@ -52,7 +53,7 @@ final class AttributeRegistrationTest extends TestCase
 
     public function testAddAttributedReadsLifetimeServiceKeyAndTags(): void
     {
-        $services = (new ServiceCollection())->addAttributed(AuditLogger::class, PushNotifier::class);
+        $services = (new TestServiceCollection())->addAttributed(AuditLogger::class, PushNotifier::class);
 
         [$audit, $push] = $services->descriptors();
         $this->assertSame([LoggerInterface::class, 'audit', ServiceLifetime::Scoped], [$audit->service, $audit->key, $audit->lifetime]);
@@ -65,8 +66,8 @@ final class AttributeRegistrationTest extends TestCase
 
     public function testProfileAttributeSkipsInactiveClasses(): void
     {
-        $this->assertFalse((new ServiceCollection())->addAttributed(FakeMailer::class)->has(FakeMailer::class));
-        $this->assertTrue((new ServiceCollection(['ci']))->addAttributed(FakeMailer::class)->has(FakeMailer::class));
+        $this->assertFalse((new TestServiceCollection())->addAttributed(FakeMailer::class)->has(FakeMailer::class));
+        $this->assertTrue((new TestServiceCollection(['ci']))->addAttributed(FakeMailer::class)->has(FakeMailer::class));
     }
 
     public function testAddAttributedRejectsClassesWithoutExactlyOneLifetime(): void
@@ -74,7 +75,7 @@ final class AttributeRegistrationTest extends TestCase
         foreach ([NoLifetime::class => 'has no #[Singleton]', TwoLifetimes::class => 'more than one lifetime attribute', 'App\\Missing' => 'does not exist'] as $class => $message) {
             try {
                 /** @var class-string $class */
-                (new ServiceCollection())->addAttributed($class);
+                (new TestServiceCollection())->addAttributed($class);
                 $this->fail("{$class} should be rejected.");
             } catch (ContainerException $e) {
                 $this->assertStringContainsString($message, $e->getMessage());
@@ -86,7 +87,7 @@ final class AttributeRegistrationTest extends TestCase
 
     public function testScanRegistersOnlyAttributedClassesSortedByName(): void
     {
-        $services = (new ServiceCollection())->scan(__DIR__ . '/Fixtures/Scan', self::SCAN_NAMESPACE, 'module:Scan');
+        $services = (new TestServiceCollection())->scan(__DIR__ . '/Fixtures/Scan', self::SCAN_NAMESPACE, 'module:Scan');
 
         $implementations = array_map(static fn ($d) => $d->implementation, $services->descriptors());
 
@@ -98,7 +99,7 @@ final class AttributeRegistrationTest extends TestCase
 
     public function testScanHonoursProfilesAndTags(): void
     {
-        $container = (new ServiceCollection(['testing']))
+        $container = (new TestServiceCollection(['testing']))
             ->scan(__DIR__ . '/Fixtures/Scan/', '\\' . self::SCAN_NAMESPACE . '\\')
             ->build();
 
@@ -108,7 +109,7 @@ final class AttributeRegistrationTest extends TestCase
 
     public function testExplicitRegistrationsWinOverScannedOnes(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->scan(__DIR__ . '/Fixtures/Scan', self::SCAN_NAMESPACE)
             ->build();
@@ -120,7 +121,7 @@ final class AttributeRegistrationTest extends TestCase
 
     public function testScanRunsOnlyOnce(): void
     {
-        $services = (new ServiceCollection())->scan(__DIR__ . '/Fixtures/Scan', self::SCAN_NAMESPACE);
+        $services = (new TestServiceCollection())->scan(__DIR__ . '/Fixtures/Scan', self::SCAN_NAMESPACE);
 
         $this->assertCount(2, $services->descriptors());
         $this->assertCount(2, $services->descriptors());

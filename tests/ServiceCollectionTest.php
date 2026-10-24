@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Zana\Container\Tests;
 
+use Zana\Container\Tests\Support\TestServiceCollection;
 use PHPUnit\Framework\TestCase;
 use Zana\Container\Exception\ContainerException;
 use Zana\Container\ServiceCollection;
@@ -23,7 +24,7 @@ final class ServiceCollectionTest extends TestCase
         $factory = static fn (): FileLogger => new FileLogger();
         $instance = new NullLogger();
 
-        $services = (new ServiceCollection())
+        $services = (new TestServiceCollection())
             ->singleton(FileLogger::class)
             ->scoped(LoggerInterface::class, FileLogger::class, origin: 'module:Core')
             ->transient('factory-logger', $factory, key: 'fast')
@@ -39,7 +40,7 @@ final class ServiceCollectionTest extends TestCase
 
     public function testRegisteringAgainAppends(): void
     {
-        $services = (new ServiceCollection())
+        $services = (new TestServiceCollection())
             ->transient(NotifierInterface::class, EmailNotifier::class)
             ->transient(NotifierInterface::class, SmsNotifier::class)
             ->instance(NotifierInterface::class, new EmailNotifier());
@@ -49,7 +50,7 @@ final class ServiceCollectionTest extends TestCase
 
     public function testTryRegistersOnlyWhenAbsent(): void
     {
-        $services = (new ServiceCollection())
+        $services = (new TestServiceCollection())
             ->trySingleton(LoggerInterface::class, FileLogger::class)
             ->trySingleton(LoggerInterface::class, NullLogger::class)
             ->tryScoped(LoggerInterface::class, NullLogger::class, key: 'null')
@@ -62,7 +63,7 @@ final class ServiceCollectionTest extends TestCase
 
     public function testTryIgnoresAliases(): void
     {
-        $services = (new ServiceCollection())
+        $services = (new TestServiceCollection())
             ->alias(LoggerInterface::class, FileLogger::class)
             ->tryTransient(LoggerInterface::class, NullLogger::class);
 
@@ -71,7 +72,7 @@ final class ServiceCollectionTest extends TestCase
 
     public function testReplaceKeepsTheLastLifetimeByDefault(): void
     {
-        $services = (new ServiceCollection())
+        $services = (new TestServiceCollection())
             ->transient(LoggerInterface::class, FileLogger::class)
             ->scoped(LoggerInterface::class, FileLogger::class)
             ->singleton(LoggerInterface::class, FileLogger::class, key: 'other')
@@ -86,7 +87,7 @@ final class ServiceCollectionTest extends TestCase
 
     public function testReplaceAcceptsAnExplicitLifetime(): void
     {
-        $services = (new ServiceCollection())
+        $services = (new TestServiceCollection())
             ->transient(LoggerInterface::class, FileLogger::class)
             ->replace(LoggerInterface::class, NullLogger::class, lifetime: ServiceLifetime::Singleton);
 
@@ -95,7 +96,7 @@ final class ServiceCollectionTest extends TestCase
 
     public function testReplaceKeepsTagsDecoratorsAndAliases(): void
     {
-        $services = (new ServiceCollection())
+        $services = (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->alias('logger', LoggerInterface::class)
             ->tag('loggers', LoggerInterface::class)
@@ -115,14 +116,14 @@ final class ServiceCollectionTest extends TestCase
         $this->expectException(ContainerException::class);
         $this->expectExceptionMessage("Cannot replace Zana\\Container\\Tests\\Fixtures\\LoggerInterface: it has no registration with key 'x'");
 
-        (new ServiceCollection())
+        (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->replace(LoggerInterface::class, NullLogger::class, key: 'x');
     }
 
     public function testRemoveWithoutKeyRemovesAliasTagsAndDecorators(): void
     {
-        $services = (new ServiceCollection())
+        $services = (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->singleton(LoggerInterface::class, FileLogger::class, key: 'file')
             ->alias(LoggerInterface::class . 'Alias', LoggerInterface::class)
@@ -143,7 +144,7 @@ final class ServiceCollectionTest extends TestCase
 
     public function testRemoveWithKeyOnlyRemovesThatKey(): void
     {
-        $services = (new ServiceCollection())
+        $services = (new TestServiceCollection())
             ->singleton(LoggerInterface::class, FileLogger::class)
             ->singleton(LoggerInterface::class, FileLogger::class, key: 'file')
             ->remove(LoggerInterface::class, 'file')
@@ -155,7 +156,7 @@ final class ServiceCollectionTest extends TestCase
 
     public function testHasCoversAliasesOnlyWithoutKey(): void
     {
-        $services = (new ServiceCollection())
+        $services = (new TestServiceCollection())
             ->singleton(FileLogger::class)
             ->alias('logger', FileLogger::class);
 
@@ -168,12 +169,12 @@ final class ServiceCollectionTest extends TestCase
     {
         $this->expectException(ContainerException::class);
 
-        (new ServiceCollection())->alias('logger', 'logger');
+        (new TestServiceCollection())->alias('logger', 'logger');
     }
 
     public function testTaggingTwiceHasNoEffect(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(FileLogger::class)
             ->tag('loggers', FileLogger::class)
             ->tag('loggers', FileLogger::class)
@@ -185,7 +186,7 @@ final class ServiceCollectionTest extends TestCase
 
     public function testCollectionIsFrozenAfterBuild(): void
     {
-        $services = (new ServiceCollection())->singleton(FileLogger::class);
+        $services = (new TestServiceCollection())->singleton(FileLogger::class);
         $services->build();
 
         $mutations = [
@@ -212,7 +213,7 @@ final class ServiceCollectionTest extends TestCase
 
     public function testFailedBuildLeavesTheCollectionEditable(): void
     {
-        $services = (new ServiceCollection())->singleton(LoggerInterface::class);
+        $services = (new TestServiceCollection())->singleton(LoggerInterface::class);
 
         try {
             $services->build();

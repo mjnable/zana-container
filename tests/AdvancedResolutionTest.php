@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Zana\Container\Tests;
 
+use Zana\Container\Tests\Support\TestServiceCollection;
 use PHPUnit\Framework\Attributes\After;
 use PHPUnit\Framework\TestCase;
 use Zana\Container\Exception\ResolutionException;
@@ -50,7 +51,7 @@ final class AdvancedResolutionTest extends TestCase
 
     public function testInjectAndTaggedParameters(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->addAttributed(AuditLogger::class)
             ->singleton('primary-logger', FileLogger::class)
             ->singleton(PushNotifier::class)
@@ -70,7 +71,7 @@ final class AdvancedResolutionTest extends TestCase
 
     public function testUnionResolvesItsOnlyRegisteredMember(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(NullLogger::class)
             ->transient(NeedsUnion::class)
             ->transient(NeedsOptionalUnion::class)
@@ -82,14 +83,14 @@ final class AdvancedResolutionTest extends TestCase
 
     public function testNullableUnionWithoutCandidatesReceivesNull(): void
     {
-        $container = (new ServiceCollection())->transient(NeedsOptionalUnion::class)->build();
+        $container = (new TestServiceCollection())->transient(NeedsOptionalUnion::class)->build();
 
         $this->assertNull($container->get(NeedsOptionalUnion::class)->logger);
     }
 
     public function testIntersectionNeedsAnImplementationSatisfyingEveryMember(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(Readable::class, Stream::class)
             ->transient(NeedsStream::class)
             ->build();
@@ -99,7 +100,7 @@ final class AdvancedResolutionTest extends TestCase
 
     public function testIntersectionIgnoresPartialImplementations(): void
     {
-        $services = (new ServiceCollection())
+        $services = (new TestServiceCollection())
             ->singleton(Readable::class, ReadOnlyStream::class)
             ->transient(NeedsStream::class);
 
@@ -109,7 +110,7 @@ final class AdvancedResolutionTest extends TestCase
 
     public function testDnfCombinesAlternatives(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->singleton(Writable::class, Stream::class)
             ->transient(NeedsDnf::class)
             ->build();
@@ -157,7 +158,7 @@ final class AdvancedResolutionTest extends TestCase
     public function testCustomProvidersReceiveContextAndEnumValuesAreConverted(): void
     {
         $provider = new ArraySettingsProvider(['mode' => 'strict', 'level' => 1]);
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->addParameterProvider($provider)
             ->transient(UsesSettings::class, origin: 'module:Settings')
             ->build();
@@ -171,7 +172,7 @@ final class AdvancedResolutionTest extends TestCase
 
     public function testProviderValuesMustMatchTheDeclaredType(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->addParameterProvider(new ArraySettingsProvider(['mode' => 42, 'level' => 1]))
             ->transient(UsesSettings::class)
             ->build();
@@ -182,7 +183,7 @@ final class AdvancedResolutionTest extends TestCase
 
     public function testInvalidEnumValuesAreReported(): void
     {
-        $container = (new ServiceCollection())
+        $container = (new TestServiceCollection())
             ->addParameterProvider(new ArraySettingsProvider(['mode' => 'x', 'level' => 9]))
             ->transient(UsesSettings::class)
             ->build();
@@ -197,7 +198,7 @@ final class AdvancedResolutionTest extends TestCase
      */
     private function envContainer(string $class): \Zana\Container\Contracts\ContainerInterface
     {
-        return (new ServiceCollection())
+        return (new TestServiceCollection())
             ->addParameterProvider(new EnvValueProvider())
             ->transient($class)
             ->build();
