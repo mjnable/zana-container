@@ -41,6 +41,12 @@ class ServiceCollection implements ServiceCollectionInterface
     /** @var list<ServiceDescriptor> */
     private array $descriptors = [];
 
+    /** The index of the registration just made, for uses(); null when the last call registered nothing */
+    private ?int $last = null;
+
+    /** Whether the last registration call was a try*() that registered nothing */
+    private bool $lastSkipped = false;
+
     /** @var list<ServiceDescriptor> Registrations found by scan(), placed before explicit ones */
     private array $scanned = [];
 
@@ -111,17 +117,17 @@ class ServiceCollection implements ServiceCollectionInterface
 
     public function trySingleton(string $service, string|Closure|null $implementation = null, ?string $key = null, bool $lazy = false, ?string $origin = null): static
     {
-        return $this->isRegistered($service, $key) ? $this->unlessBuilt() : $this->singleton($service, $implementation, $key, $lazy, $origin);
+        return $this->isRegistered($service, $key) ? $this->skipped() : $this->singleton($service, $implementation, $key, $lazy, $origin);
     }
 
     public function tryScoped(string $service, string|Closure|null $implementation = null, ?string $key = null, bool $lazy = false, ?string $origin = null): static
     {
-        return $this->isRegistered($service, $key) ? $this->unlessBuilt() : $this->scoped($service, $implementation, $key, $lazy, $origin);
+        return $this->isRegistered($service, $key) ? $this->skipped() : $this->scoped($service, $implementation, $key, $lazy, $origin);
     }
 
     public function tryTransient(string $service, string|Closure|null $implementation = null, ?string $key = null, bool $lazy = false, ?string $origin = null): static
     {
-        return $this->isRegistered($service, $key) ? $this->unlessBuilt() : $this->transient($service, $implementation, $key, $lazy, $origin);
+        return $this->isRegistered($service, $key) ? $this->skipped() : $this->transient($service, $implementation, $key, $lazy, $origin);
     }
 
     public function instance(string $service, object $instance, ?string $key = null, ?string $origin = null): static
@@ -135,6 +141,8 @@ class ServiceCollection implements ServiceCollectionInterface
             key: $key,
             origin: $origin,
         );
+        $this->last = array_key_last($this->descriptors);
+        $this->lastSkipped = false;
 
         return $this;
     }
@@ -155,6 +163,39 @@ class ServiceCollection implements ServiceCollectionInterface
         $this->removeRegistrations($service, $key);
 
         return $this->add($service, $implementation, $lifetime ?? $replaced[array_key_last($replaced)]->lifetime, $key, $origin);
+    }
+
+    public function uses(string ...$services): static
+    {
+        $this->assertNotBuilt();
+
+        if ($this->lastSkipped) {
+            return $this; // the existing registration keeps its own declaration
+        }
+
+        $descriptor = $this->last === null ? null : ($this->descriptors[$this->last] ?? null);
+        if ($descriptor === null) {
+            throw new \LogicException('uses() declares what a factory resolves: call it right after registering the factory.');
+        }
+        if ($descriptor->factory === null) {
+            throw new \LogicException("uses() declares what a factory resolves; {$descriptor->service} is not registered with a factory, and its constructor is checked already.");
+        }
+        foreach ($services as $service) {
+            if ($service === '') {
+                throw new \InvalidArgumentException('uses() needs service ids, not empty strings.');
+            }
+        }
+
+        $this->descriptors[$this->last] = new ServiceDescriptor(
+            service: $descriptor->service,
+            lifetime: $descriptor->lifetime,
+            factory: $descriptor->factory,
+            key: $descriptor->key,
+            origin: $descriptor->origin,
+            uses: array_values(array_unique([...$descriptor->uses, ...$services])),
+        );
+
+        return $this;
     }
 
     public function remove(string $service, ?string $key = null): static
@@ -502,6 +543,7 @@ class ServiceCollection implements ServiceCollectionInterface
             },
             $d->lazy,
             $d->origin,
+            ...($d->uses === [] ? [] : [$d->uses]), // only when declared, so older fingerprints stay valid
         ];
 
         return hash('xxh128', serialize([
@@ -536,6 +578,8 @@ class ServiceCollection implements ServiceCollectionInterface
             lazy: $lazy,
             origin: $origin,
         );
+        $this->last = array_key_last($this->descriptors);
+        $this->lastSkipped = false;
 
         return $this;
     }
@@ -644,6 +688,7 @@ class ServiceCollection implements ServiceCollectionInterface
 
     private function removeRegistrations(string $service, ?string $key): void
     {
+        $this->last = null;
         $this->descriptors = array_values(array_filter(
             $this->descriptors,
             static fn (ServiceDescriptor $d): bool => !($d->service === $service && $d->key === $key)
@@ -668,9 +713,11 @@ class ServiceCollection implements ServiceCollectionInterface
     /**
      * A try* call that registers nothing must still respect the frozen state.
      */
-    private function unlessBuilt(): static
+    private function skipped(): static
     {
         $this->assertNotBuilt();
+        $this->last = null;
+        $this->lastSkipped = true;
 
         return $this;
     }

@@ -75,6 +75,13 @@ final class GraphBuilder
                 }
             }
 
+            foreach ($descriptor->uses as $service) {
+                $to = $resolveTarget($service);
+                if ($to !== null) {
+                    $edges[] = new DependencyEdge($index, $to, 'factory', null, $to < count($registry->descriptors) && $registry->descriptor($to)->lazy);
+                }
+            }
+
             foreach ($registry->decoratorsOf($descriptor->service) as $decorator) {
                 $plan = is_string($decorator) ? ($decoratorPlans[BuildResult::decoratorKey($descriptor->service, $decorator)] ?? null) : null;
                 if ($plan !== null) {

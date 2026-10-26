@@ -12,7 +12,7 @@ final readonly class DependencyEdge
     /**
      * @param int $from Id of the depending node
      * @param int $to Id of the node depended on
-     * @param string $kind "constructor", "property", "method", "variadic", "tagged", "alias" or "decorator"
+     * @param string $kind "constructor", "property", "method", "variadic", "tagged", "alias", "decorator" or "factory" (declared with uses())
      * @param string|null $parameter Parameter or property name, if any
      * @param bool $lazy Whether the target is a lazy service
      */

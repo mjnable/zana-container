@@ -103,7 +103,7 @@ final class Engine
             ServiceLifetime::Transient => $requester,
             ServiceLifetime::Scoped => $requester->isScope()
                 ? $requester
-                : throw ScopeException::scopedFromRoot(Label::of($descriptor), $this->chain()),
+                : throw $this->scopedFromRoot($descriptor),
         };
 
         if ($descriptor->lifetime === ServiceLifetime::Transient) {
@@ -142,6 +142,23 @@ final class Engine
         return $function instanceof \ReflectionMethod
             ? $function->invokeArgs($object, $values)
             : $function->invokeArgs($values);
+    }
+
+    /**
+     * A scoped service requested from the root container. When a singleton is
+     * being created (typically by a factory, which the build cannot see into),
+     * name it: that is the registration to fix.
+     */
+    private function scopedFromRoot(ServiceDescriptor $scoped): ScopeException
+    {
+        foreach (array_reverse($this->stack()) as $index) {
+            $creating = $this->registry->descriptor($index);
+            if ($creating->lifetime === ServiceLifetime::Singleton) {
+                return ScopeException::capturedBySingleton(Label::withLifetime($creating), Label::withLifetime($scoped), $creating->factory !== null, $this->chain());
+            }
+        }
+
+        return ScopeException::scopedFromRoot(Label::of($scoped), $this->chain());
     }
 
     /**

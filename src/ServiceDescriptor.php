@@ -22,6 +22,7 @@ final readonly class ServiceDescriptor
      * @param string|null $key Key of a keyed registration, null for unkeyed
      * @param bool $lazy Resolve as a proxy created on first use (class strategy only)
      * @param string|null $origin Who registered it, e.g. "module:Patients" (diagnostics only)
+     * @param list<string> $uses Services the factory resolves, declared so the build can check them (factory strategy only)
      */
     public function __construct(
         public string $service,
@@ -32,7 +33,12 @@ final readonly class ServiceDescriptor
         public ?string $key = null,
         public bool $lazy = false,
         public ?string $origin = null,
+        public array $uses = [],
     ) {
+        if ($uses !== [] && $factory === null) {
+            throw new \InvalidArgumentException('Only factory registrations declare what they use: the constructor of a class registration is checked already.');
+        }
+
         if ($lazy && $implementation === null) {
             throw new \InvalidArgumentException('Only class registrations can be lazy, not factories or instances.');
         }

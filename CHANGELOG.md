@@ -3,6 +3,22 @@
 All Zana packages share one version number and are released together. A release that did
 not change this package is not listed.
 
+## 2.4.0 — unreleased
+
+### Added
+
+- `ServiceCollectionInterface::uses()`: a factory registration declares the services it resolves, and
+  the build checks them like constructor parameters (B4 cycles, B5 a singleton using a scoped
+  service). A declared service that is not registered is not an error. `graph()` shows the edges as
+  `factory` (FE-40).
+- `ServiceDescriptor::$uses`.
+
+### Changed
+
+- A scoped service resolved while a singleton is created (in an undeclared factory) fails with an
+  error naming both services and how to fix it, instead of only "cannot be resolved from the root
+  container".
+- The compiled fingerprint includes declared services, only when there are some.
 ## 2.3.0 — 2026-10-26
 
 ### Changed

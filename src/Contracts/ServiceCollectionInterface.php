@@ -43,6 +43,21 @@ interface ServiceCollectionInterface
     public function replace(string $service, string|Closure $implementation, ?string $key = null, ?ServiceLifetime $lifetime = null, ?string $origin = null): static;
 
     /**
+     * Declare the services the factory of the registration just made resolves, so the
+     * build checks them as it checks constructor parameters: a singleton must not use a
+     * scoped service, and there must be no cycle. A declared service that is not registered
+     * is not an error, as the factory may serve a feature the application does not use.
+     *
+     *     $services->singleton(ResetTokens::class, fn ($r) => new ResetTokens($r->get(Users::class)))->uses(Users::class);
+     *
+     * Declare only what the factory always resolves, not what it resolves after has().
+     * After a try*() call that registered nothing, it does nothing.
+     *
+     * @throws \LogicException If no registration precedes it, or the registration is not a factory
+     */
+    public function uses(string ...$services): static;
+
+    /**
      * Remove every registration of the service (with that key). Without a key this
      * also removes the id as an alias, from all tags, and its decorators.
      */

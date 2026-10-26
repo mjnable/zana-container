@@ -14,7 +14,8 @@ use Zana\Container\ServiceLifetime;
  * §10, rules B1 to B12) and builds the plans used at runtime.
  *
  * Factory and instance registrations are opaque: their own dependencies are
- * only checked when they are resolved.
+ * only checked when they are resolved, except the services a factory declares
+ * with uses().
  *
  * @internal
  */
@@ -72,7 +73,10 @@ final class BuildValidator
 
         $implementation = $descriptor->implementation;
         if ($implementation === null) {
-            return; // factory
+            // A factory: the services it declares with uses() join the graph (B4, B5) when they
+            // are registered. A missing one is not an error: packages register factories for
+            // features an application may not use, and resolving it would fail as before.
+            return;
         }
 
         $class = $this->instantiableClass($implementation, $descriptor, 'B1');
@@ -333,7 +337,8 @@ final class BuildValidator
 
     /**
      * Registrations a registration depends on: its constructor dependencies
-     * (class strategy only) plus those of its service's class decorators.
+     * (class strategy only) or the services its factory declares with uses(),
+     * plus those of its service's class decorators.
      *
      * @return list<int>
      */
@@ -356,6 +361,13 @@ final class BuildValidator
         }
 
         $targets = [];
+        foreach ($descriptor->uses as $service) {
+            $target = $this->registry->last($this->registry->resolveAlias($service));
+            if ($target !== null) {
+                $targets[] = $target;
+            }
+        }
+
         foreach ($plans as $plan) {
             foreach ($plan->dependencies() as $dependency) {
                 $services = match ($dependency->source) {
